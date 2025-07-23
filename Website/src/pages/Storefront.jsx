@@ -257,7 +257,7 @@ const Storefront = () => {
             </div>
 
             <h1 className="text-3xl font-bold text-nothing-white mb-2 font-nothing">
-              {user.displayName || user.username}
+              {user.username}
             </h1>
             <p className="text-nothing-red text-lg mb-4">@{user.username}</p>
 

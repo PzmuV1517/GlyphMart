@@ -233,11 +233,11 @@ const GlyphDetail = () => {
               
               <div className="flex items-center space-x-4 mb-6">
                 <Link
-                  to={`/storefront/${glyph.creatorUsername}`}
+                  to={`/storefront/${glyph.creatorUsername || glyph.creatorId}`}
                   className="flex items-center space-x-2 text-nothing-red hover:text-red-400 transition-colors duration-200"
                 >
                   <User className="h-4 w-4" />
-                  <span className="font-medium">@{glyph.creatorUsername}</span>
+                  <span className="font-medium">@{glyph.creatorUsername || glyph.creatorId}</span>
                 </Link>
                 
                 <div className="flex items-center space-x-1 text-nothing-gray-400">

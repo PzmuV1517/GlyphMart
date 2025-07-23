@@ -154,7 +154,7 @@ const UploadGlyph = () => {
         githubUrl: formData.githubUrl.trim() || null,
         instructions: formData.instructions.trim() || null,
         creatorId: currentUser.uid,
-        creatorUsername: userProfile?.username || currentUser.displayName,
+        creatorUsername: userProfile?.username,
         downloads: 0,
         views: 0,
         likes: 0,
