@@ -265,6 +265,8 @@ const GlyphDetail = () => {
             </motion.div>
 
         {/* Edit/Delete controls for creator */}
+        {/* DEBUG: Show userProfile and glyph.creatorUsername */}
+        <div className="mb-2 text-xs text-nothing-gray-400">DEBUG: userProfile.username = {userProfile?.username}, glyph.creatorUsername = {glyph?.creatorUsername}</div>
         {userProfile && glyph.creatorUsername === userProfile.username && (
           <>
             <div className="flex space-x-3 mt-6">
