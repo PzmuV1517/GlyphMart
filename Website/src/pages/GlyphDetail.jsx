@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { doc, getDoc, updateDoc, increment, collection, addDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, increment, collection, addDoc, deleteDoc, getDocs, query, where } from 'firebase/firestore';
 import { Download, Eye, Heart, Share2, AlertTriangle, Github, ExternalLink, Calendar, User } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { db } from '../utils/firebase';
@@ -15,7 +15,13 @@ const GlyphDetail = () => {
   const [downloadLoading, setDownloadLoading] = useState(false);
   const [liked, setLiked] = useState(false);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
-  const { currentUser } = useAuth();
+  const { currentUser, userProfile } = useAuth();
+  const [editing, setEditing] = useState(false);
+  const [editData, setEditData] = useState(null);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -151,6 +157,47 @@ const GlyphDetail = () => {
     }
   };
 
+  useEffect(() => {
+    if (editing && glyph) {
+      setEditData({
+        title: glyph.title,
+        description: glyph.description,
+        apkUrl: glyph.apkUrl || '',
+        githubUrl: glyph.githubUrl || '',
+        instructions: glyph.instructions || '',
+        images: glyph.images || [],
+      });
+    }
+  }, [editing, glyph]);
+
+  const handleEditChange = (e) => {
+    const { name, value } = e.target;
+    setEditData(prev => ({ ...prev, [name]: value }));
+    setEditError('');
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    setEditLoading(true);
+    setEditError('');
+    try {
+      await updateDoc(doc(db, 'glyphs', glyph.id), {
+        title: editData.title,
+        description: editData.description,
+        apkUrl: editData.apkUrl,
+        githubUrl: editData.githubUrl,
+        instructions: editData.instructions,
+        images: editData.images,
+      });
+      setEditing(false);
+      setGlyph(prev => ({ ...prev, ...editData }));
+    } catch (error) {
+      setEditError('Failed to update glyph: ' + error.message);
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-nothing-black flex items-center justify-center">
@@ -170,6 +217,20 @@ const GlyphDetail = () => {
         <div className="text-center">
           <h1 className="text-2xl font-bold text-nothing-white mb-4">Glyph not found</h1>
           <Link to="/" className="text-nothing-red hover:text-red-400">
+            Return to home
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (glyph.deleted) {
+    return (
+      <div className="min-h-screen bg-nothing-black flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-red-500 mb-4">Glyph Deleted</h1>
+          <p className="text-nothing-gray-400 mb-6">This glyph has been deleted by its creator and is no longer available.</p>
+          <Link to="/" className="bg-nothing-red hover:bg-red-700 text-nothing-white px-6 py-3 rounded-lg font-medium transition-colors duration-200">
             Return to home
           </Link>
         </div>
@@ -203,21 +264,88 @@ const GlyphDetail = () => {
               )}
             </motion.div>
 
-            {/* Additional images */}
-            {glyph.images && glyph.images.length > 1 && (
-              <div className="grid grid-cols-3 gap-2">
-                {glyph.images.slice(1, 4).map((image, index) => (
-                  <div key={index} className="aspect-square bg-nothing-gray-900 rounded-lg overflow-hidden">
-                    <img
-                      src={image}
-                      alt={`${glyph.title} ${index + 2}`}
-                      className="w-full h-full object-cover"
-                    />
+        {/* Edit/Delete controls for creator */}
+        {userProfile && glyph.creatorUsername === userProfile.username && (
+          <>
+            <div className="flex space-x-3 mt-6">
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="px-6 py-3 bg-nothing-gray-700 hover:bg-nothing-gray-800 text-nothing-white rounded-lg font-medium transition-colors duration-200"
+              >
+                Edit Glyph
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(true)}
+                className="px-6 py-3 bg-nothing-red hover:bg-red-700 text-nothing-white rounded-lg font-medium transition-colors duration-200"
+              >
+                Delete Glyph
+              </button>
+            </div>
+            {/* Delete Confirmation Modal */}
+            {showDeleteConfirm && (
+              <div className="fixed inset-0 bg-nothing-black/80 flex items-center justify-center z-50 p-4">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="bg-nothing-gray-900 border border-nothing-gray-800 rounded-lg p-6 max-w-md w-full"
+                >
+                  <div className="text-center mb-6">
+                    <h2 className="text-2xl font-bold text-nothing-white mb-4">Delete Glyph?</h2>
+                    <p className="text-nothing-gray-300 mb-4">Are you sure you want to permanently delete this glyph and all its related data? This action cannot be undone.</p>
                   </div>
-                ))}
+                  <div className="flex space-x-3">
+                    <button
+                      onClick={async () => {
+                        if (deleteLoading) return; // Prevent double delete
+                        setDeleteLoading(true);
+                        try {
+                          // Delete glyph document
+                          await deleteDoc(doc(db, 'glyphs', glyph.id));
+                          // Delete all likes
+                          const likesQuery = query(collection(db, 'likes'), where('glyphId', '==', glyph.id));
+                          const likesSnapshot = await getDocs(likesQuery);
+                          for (const likeDoc of likesSnapshot.docs) {
+                            await deleteDoc(likeDoc.ref);
+                          }
+                          // Delete all views
+                          const viewsQuery = query(collection(db, 'glyphViews'), where('glyphId', '==', glyph.id));
+                          const viewsSnapshot = await getDocs(viewsQuery);
+                          for (const viewDoc of viewsSnapshot.docs) {
+                            await deleteDoc(viewDoc.ref);
+                          }
+                          // Delete all downloads
+                          const downloadsQuery = query(collection(db, 'glyphDownloads'), where('glyphId', '==', glyph.id));
+                          const downloadsSnapshot = await getDocs(downloadsQuery);
+                          for (const downloadDoc of downloadsSnapshot.docs) {
+                            await deleteDoc(downloadDoc.ref);
+                          }
+                        } finally {
+                          setDeleteLoading(false);
+                          setShowDeleteConfirm(false);
+                          navigate('/');
+                        }
+                      }}
+                      disabled={deleteLoading}
+                      className="flex-1 bg-nothing-red hover:bg-red-700 text-nothing-white px-4 py-2 rounded-lg font-medium transition-colors duration-200 disabled:opacity-50"
+                    >
+                      {deleteLoading ? 'Deleting...' : 'Yes, Delete'}
+                    </button>
+                    <button
+                      onClick={() => setShowDeleteConfirm(false)}
+                      disabled={deleteLoading}
+                      className="px-4 py-2 border border-nothing-gray-700 text-nothing-white hover:border-nothing-gray-600 rounded-lg font-medium transition-colors duration-200"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </motion.div>
               </div>
             )}
-          </div>
+          </>
+        )}
+      </div>
 
           {/* Details Section */}
           <motion.div
@@ -375,6 +503,101 @@ const GlyphDetail = () => {
             </div>
           </motion.div>
         </div>
+      )}
+
+      {/* Edit Glyph Modal */}
+      {editing && editData ? (
+        <div className="min-h-screen bg-nothing-black flex items-center justify-center p-4">
+          <div className="bg-nothing-gray-900 border border-nothing-gray-800 rounded-lg p-8 max-w-lg w-full">
+            <h2 className="text-2xl font-bold text-nothing-white mb-6">Edit Glyph</h2>
+            <form onSubmit={handleEditSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-nothing-gray-300 mb-2">Title</label>
+                <input
+                  type="text"
+                  name="title"
+                  value={editData.title}
+                  onChange={handleEditChange}
+                  className="w-full px-4 py-3 bg-nothing-gray-800 border border-nothing-gray-700 rounded-lg text-nothing-white"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-nothing-gray-300 mb-2">Description</label>
+                <textarea
+                  name="description"
+                  value={editData.description}
+                  onChange={handleEditChange}
+                  rows={4}
+                  className="w-full px-4 py-3 bg-nothing-gray-800 border border-nothing-gray-700 rounded-lg text-nothing-white"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-nothing-gray-300 mb-2">APK URL</label>
+                <input
+                  type="url"
+                  name="apkUrl"
+                  value={editData.apkUrl}
+                  onChange={handleEditChange}
+                  className="w-full px-4 py-3 bg-nothing-gray-800 border border-nothing-gray-700 rounded-lg text-nothing-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-nothing-gray-300 mb-2">GitHub URL</label>
+                <input
+                  type="url"
+                  name="githubUrl"
+                  value={editData.githubUrl}
+                  onChange={handleEditChange}
+                  className="w-full px-4 py-3 bg-nothing-gray-800 border border-nothing-gray-700 rounded-lg text-nothing-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-nothing-gray-300 mb-2">Instructions</label>
+                <textarea
+                  name="instructions"
+                  value={editData.instructions}
+                  onChange={handleEditChange}
+                  rows={2}
+                  className="w-full px-4 py-3 bg-nothing-gray-800 border border-nothing-gray-700 rounded-lg text-nothing-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-nothing-gray-300 mb-2">Image URLs (comma separated)</label>
+                <input
+                  type="text"
+                  name="images"
+                  value={editData.images.join(', ')}
+                  onChange={e => setEditData(prev => ({ ...prev, images: e.target.value.split(',').map(s => s.trim()) }))
+                  }
+                  className="w-full px-4 py-3 bg-nothing-gray-800 border border-nothing-gray-700 rounded-lg text-nothing-white"
+                />
+              </div>
+              {editError && (
+                <div className="bg-red-900/20 border border-red-700 text-red-400 px-4 py-2 rounded-lg mb-4">{editError}</div>
+              )}
+              <div className="flex space-x-3 mt-6">
+                <button
+                  type="submit"
+                  disabled={editLoading}
+                  className="px-6 py-3 bg-nothing-red hover:bg-red-700 text-nothing-white rounded-lg font-medium transition-colors duration-200 disabled:opacity-50"
+                >
+                  {editLoading ? 'Saving...' : 'Save Changes'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditing(false)}
+                  className="px-6 py-3 bg-nothing-gray-700 hover:bg-nothing-gray-800 text-nothing-white rounded-lg font-medium transition-colors duration-200"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : (
+        <></>
       )}
     </div>
   );
