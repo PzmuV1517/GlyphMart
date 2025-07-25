@@ -5,7 +5,7 @@ import { Download, Eye, Heart, Share2, AlertTriangle, Github, ExternalLink, Cale
 import { motion } from 'framer-motion';
 import { db } from '../utils/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { recordGlyphView, recordGlyphDownload, getGlyphViewCount } from '../utils/viewTracking';
+import { recordGlyphView, recordGlyphDownload, getGlyphViewCount, getGlyphDownloadCount } from '../utils/viewTracking';
 import { hasUserLikedGlyph, toggleGlyphLike } from '../utils/likeTracking';
 
 const GlyphDetail = () => {
@@ -15,6 +15,7 @@ const GlyphDetail = () => {
   const [downloadLoading, setDownloadLoading] = useState(false);
   const [liked, setLiked] = useState(false);
   const [realViews, setRealViews] = useState(null);
+  const [realDownloads, setRealDownloads] = useState(null);
   const [likeLoading, setLikeLoading] = useState(false);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const { currentUser, userProfile } = useAuth();
@@ -37,9 +38,11 @@ const GlyphDetail = () => {
           // Record view with IP-based tracking (only increments if new IP)
           await recordGlyphView(id);
 
-          // Fetch real view count from glyphViews collection
+          // Fetch real view and download count from glyphViews and glyphDownloads collections
           const viewsCount = await getGlyphViewCount(id);
           setRealViews(viewsCount);
+          const downloadsCount = await getGlyphDownloadCount(id);
+          setRealDownloads(downloadsCount);
 
           // Check if current user has liked this glyph
           if (currentUser) {
@@ -392,15 +395,30 @@ const GlyphDetail = () => {
             <div className="flex items-center space-x-6 py-4 border-y border-nothing-gray-800">
               <div className="flex items-center space-x-2 text-nothing-gray-400">
                 <Download className="h-5 w-5" />
-                <span>{glyph.downloads || 0} downloads</span>
+                <span>
+                  {(() => {
+                    const count = realDownloads !== null ? realDownloads : (glyph.downloads || 0);
+                    return `${count} ${count === 1 ? 'download' : 'downloads'}`;
+                  })()}
+                </span>
               </div>
               <div className="flex items-center space-x-2 text-nothing-gray-400">
                 <Eye className="h-5 w-5" />
-                <span>{realViews !== null ? realViews : (glyph.views || 0)} views</span>
+                <span>
+                  {(() => {
+                    const count = realViews !== null ? realViews : (glyph.views || 0);
+                    return `${count} ${count === 1 ? 'view' : 'views'}`;
+                  })()}
+                </span>
               </div>
               <div className="flex items-center space-x-2 text-nothing-gray-400">
                 <Heart className="h-5 w-5" />
-                <span>{glyph.likes || 0} likes</span>
+                <span>
+                  {(() => {
+                    const count = glyph.likes || 0;
+                    return `${count} ${count === 1 ? 'like' : 'likes'}`;
+                  })()}
+                </span>
               </div>
             </div>
 

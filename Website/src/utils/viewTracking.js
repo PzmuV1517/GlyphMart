@@ -1,3 +1,17 @@
+// Function to get download count for a glyph
+export const getGlyphDownloadCount = async (glyphId) => {
+  try {
+    const downloadsQuery = query(
+      collection(db, 'glyphDownloads'),
+      where('glyphId', '==', glyphId)
+    );
+    const downloadsSnapshot = await getDocs(downloadsQuery);
+    return downloadsSnapshot.size;
+  } catch (error) {
+    console.error('Error getting download count:', error);
+    return 0;
+  }
+};
 import { doc, getDoc, setDoc, updateDoc, increment, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from './firebase';
 

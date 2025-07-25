@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { collection, query, orderBy, limit, getDocs, where } from 'firebase/firestore';
 import { Zap, TrendingUp, Clock, Download, Eye, Heart } from 'lucide-react';
-import { getGlyphViewCount } from '../utils/viewTracking';
+import { getGlyphViewCount, getGlyphDownloadCount } from '../utils/viewTracking';
 import { motion } from 'framer-motion';
 import { db } from '../utils/firebase';
 
@@ -53,11 +53,15 @@ const Home = () => {
 
   const GlyphCard = ({ glyph }) => {
     const [realViews, setRealViews] = useState(null);
+    const [realDownloads, setRealDownloads] = useState(null);
 
     useEffect(() => {
       let mounted = true;
       getGlyphViewCount(glyph.id).then(count => {
         if (mounted) setRealViews(count);
+      });
+      getGlyphDownloadCount(glyph.id).then(count => {
+        if (mounted) setRealDownloads(count);
       });
       return () => { mounted = false; };
     }, [glyph.id]);
@@ -88,7 +92,7 @@ const Home = () => {
                 <div className="flex items-center justify-between text-nothing-white text-sm">
                   <div className="flex items-center space-x-2">
                     <Download className="h-4 w-4" />
-                    <span>{glyph.downloads || 0}</span>
+                    <span>{realDownloads !== null ? realDownloads : (glyph.downloads || 0)}</span>
                   </div>
                   <div className="flex items-center space-x-2">
                     <Heart className="h-4 w-4" />
@@ -115,7 +119,7 @@ const Home = () => {
               <div className="flex items-center space-x-4 text-nothing-gray-500 text-sm">
                 <div className="flex items-center space-x-1">
                   <Download className="h-3 w-3" />
-                  <span>{glyph.downloads || 0}</span>
+                  <span>{realDownloads !== null ? realDownloads : (glyph.downloads || 0)}</span>
                 </div>
                 <div className="flex items-center space-x-1">
                   <Eye className="h-3 w-3" />
