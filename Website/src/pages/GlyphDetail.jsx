@@ -5,7 +5,7 @@ import { Download, Eye, Heart, Share2, AlertTriangle, Github, ExternalLink, Cale
 import { motion } from 'framer-motion';
 import { db } from '../utils/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { recordGlyphView, recordGlyphDownload } from '../utils/viewTracking';
+import { recordGlyphView, recordGlyphDownload, getGlyphViewCount } from '../utils/viewTracking';
 import { hasUserLikedGlyph, toggleGlyphLike } from '../utils/likeTracking';
 
 const GlyphDetail = () => {
@@ -14,6 +14,7 @@ const GlyphDetail = () => {
   const [loading, setLoading] = useState(true);
   const [downloadLoading, setDownloadLoading] = useState(false);
   const [liked, setLiked] = useState(false);
+  const [realViews, setRealViews] = useState(null);
   const [likeLoading, setLikeLoading] = useState(false);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const { currentUser, userProfile } = useAuth();
@@ -32,10 +33,14 @@ const GlyphDetail = () => {
         if (glyphDoc.exists()) {
           const glyphData = { id: glyphDoc.id, ...glyphDoc.data() };
           setGlyph(glyphData);
-          
+
           // Record view with IP-based tracking (only increments if new IP)
           await recordGlyphView(id);
-          
+
+          // Fetch real view count from glyphViews collection
+          const viewsCount = await getGlyphViewCount(id);
+          setRealViews(viewsCount);
+
           // Check if current user has liked this glyph
           if (currentUser) {
             const userLiked = await hasUserLikedGlyph(id, currentUser.uid);
@@ -391,7 +396,7 @@ const GlyphDetail = () => {
               </div>
               <div className="flex items-center space-x-2 text-nothing-gray-400">
                 <Eye className="h-5 w-5" />
-                <span>{glyph.views || 0} views</span>
+                <span>{realViews !== null ? realViews : (glyph.views || 0)} views</span>
               </div>
               <div className="flex items-center space-x-2 text-nothing-gray-400">
                 <Heart className="h-5 w-5" />
