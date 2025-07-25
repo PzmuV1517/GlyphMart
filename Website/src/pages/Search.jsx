@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { collection, query, where, orderBy, getDocs, limit } from 'firebase/firestore';
 import { Search as SearchIcon, Filter, SortAsc, SortDesc, Download, Eye, Heart, Zap, User } from 'lucide-react';
+import GlyphCard from '../components/GlyphCard';
 import { motion } from 'framer-motion';
 import { db } from '../utils/firebase';
 
@@ -78,82 +79,7 @@ const Search = () => {
     }
   };
 
-  const handleSortChange = (newSort) => {
-    setSortBy(newSort);
-    if (searchQuery.trim()) {
-      performSearch(searchQuery, newSort, filterBy);
-    }
-  };
-
-  const GlyphCard = ({ glyph }) => (
-    <motion.div
-      whileHover={{ y: -5 }}
-      className="bg-nothing-gray-900 border border-nothing-gray-800 rounded-lg overflow-hidden hover:border-nothing-gray-700 transition-all duration-300"
-    >
-      <Link to={`/glyph/${glyph.id}`}>
-        <div className="aspect-square bg-nothing-gray-800 relative overflow-hidden">
-          {glyph.images && glyph.images.length > 0 ? (
-            <img
-              src={glyph.images[0]}
-              alt={glyph.title}
-              className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <div className="w-16 h-16 bg-nothing-red rounded-full flex items-center justify-center glyph-animation">
-                <Zap className="h-8 w-8 text-nothing-white" />
-              </div>
-            </div>
-          )}
-          
-          {/* Overlay with stats */}
-          <div className="absolute inset-0 bg-gradient-to-t from-nothing-black/80 via-transparent to-transparent opacity-0 hover:opacity-100 transition-opacity duration-300">
-            <div className="absolute bottom-4 left-4 right-4">
-              <div className="flex items-center justify-between text-nothing-white text-sm">
-                <div className="flex items-center space-x-2">
-                  <Download className="h-4 w-4" />
-                  <span>{glyph.downloads || 0}</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Heart className="h-4 w-4" />
-                  <span>{glyph.likes || 0}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        <div className="p-4">
-          <h3 className="text-nothing-white font-semibold text-lg mb-2 truncate">
-            {glyph.title}
-          </h3>
-          <p className="text-nothing-gray-400 text-sm mb-3 line-clamp-2">
-            {glyph.description}
-          </p>
-          
-          <div className="flex items-center justify-between">
-            <Link
-              to={`/storefront/${glyph.creatorUsername}`}
-              className="text-nothing-red hover:text-red-400 text-sm font-medium transition-colors duration-200 flex items-center space-x-1"
-            >
-              <User className="h-3 w-3" />
-              <span>@{glyph.creatorUsername}</span>
-            </Link>
-            <div className="flex items-center space-x-4 text-nothing-gray-500 text-sm">
-              <div className="flex items-center space-x-1">
-                <Download className="h-3 w-3" />
-                <span>{glyph.downloads || 0}</span>
-              </div>
-              <div className="flex items-center space-x-1">
-                <Eye className="h-3 w-3" />
-                <span>{glyph.views || 0}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Link>
-    </motion.div>
-  );
+// ...existing code...
 
   return (
     <div className="min-h-screen bg-nothing-black">
@@ -263,26 +189,26 @@ const Search = () => {
           </div>
         )}
 
-        {/* Results Grid */}
-        {!loading && results.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.4 }}
-            className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6"
-          >
-            {results.map((glyph, index) => (
-              <motion.div
-                key={glyph.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: index * 0.1 }}
-              >
-                <GlyphCard glyph={glyph} />
-              </motion.div>
-            ))}
-          </motion.div>
-        )}
+         {/* Results Grid */}
+         {!loading && results.length > 0 && (
+           <motion.div
+             initial={{ opacity: 0 }}
+             animate={{ opacity: 1 }}
+             transition={{ delay: 0.4 }}
+             className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6"
+           >
+             {results.map((glyph, index) => (
+               <motion.div
+                 key={glyph.id}
+                 initial={{ opacity: 0, y: 20 }}
+                 animate={{ opacity: 1, y: 0 }}
+                 transition={{ duration: 0.5, delay: index * 0.1 }}
+               >
+                 <GlyphCard glyph={glyph} />
+               </motion.div>
+             ))}
+           </motion.div>
+         )}
 
         {/* No Results */}
         {!loading && searchQuery && results.length === 0 && (
