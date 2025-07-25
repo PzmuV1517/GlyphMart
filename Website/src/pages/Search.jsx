@@ -14,15 +14,15 @@ const Search = () => {
   const [filterBy, setFilterBy] = useState('all');
 
   useEffect(() => {
-    const query = searchParams.get('q');
-    if (query) {
-      setSearchQuery(query);
-      performSearch(query);
+    const searchTermRaw = searchParams.get('q');
+    if (searchTermRaw) {
+      setSearchQuery(searchTermRaw);
+      performSearch(searchTermRaw);
     }
   }, [searchParams]);
 
-  const performSearch = async (query, sort = sortBy, filter = filterBy) => {
-    if (!query.trim()) return;
+  const performSearch = async (searchTermRaw, sort = sortBy, filter = filterBy) => {
+    if (!searchTermRaw.trim()) return;
     
     setLoading(true);
     try {
@@ -54,7 +54,7 @@ const Search = () => {
       }));
 
       // Client-side search filtering
-      const searchTerm = query.toLowerCase();
+      const searchTerm = searchTermRaw.toLowerCase();
       const filtered = allGlyphs.filter(glyph => 
         glyph.title.toLowerCase().includes(searchTerm) ||
         glyph.description.toLowerCase().includes(searchTerm) ||
