@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Search, User, Menu, X, LogOut, Settings, Plus, Heart, Store } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -9,6 +9,7 @@ const Navbar = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const { currentUser, userProfile, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleLogout = async () => {
     try {
@@ -42,19 +43,21 @@ const Navbar = () => {
             </Link>
           </div>
 
-          {/* Search Bar */}
-          <div className="hidden md:block flex-1 max-w-lg mx-8">
-            <form onSubmit={handleSearch} className="relative">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search glyphs..."
-                className="w-full bg-nothing-gray-900 border border-nothing-gray-700 rounded-lg py-2 pl-10 pr-4 text-nothing-white placeholder-nothing-gray-400 focus:outline-none focus:ring-2 focus:ring-nothing-red focus:border-transparent transition-all duration-200"
-              />
-              <Search className="absolute left-3 top-2.5 h-5 w-5 text-nothing-gray-400" />
-            </form>
-          </div>
+          {/* Search Bar (hidden on /search) */}
+          {location.pathname !== '/search' && (
+            <div className="hidden md:block flex-1 max-w-lg mx-8">
+              <form onSubmit={handleSearch} className="relative">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search glyphs..."
+                  className="w-full bg-nothing-gray-900 border border-nothing-gray-700 rounded-lg py-2 pl-10 pr-4 text-nothing-white placeholder-nothing-gray-400 focus:outline-none focus:ring-2 focus:ring-nothing-red focus:border-transparent transition-all duration-200"
+                />
+                <Search className="absolute left-3 top-2.5 h-5 w-5 text-nothing-gray-400" />
+              </form>
+            </div>
+          )}
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-4">
