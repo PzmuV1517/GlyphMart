@@ -14,6 +14,7 @@ const GlyphDetail = () => {
   const [loading, setLoading] = useState(true);
   const [downloadLoading, setDownloadLoading] = useState(false);
   const [liked, setLiked] = useState(false);
+  const [likeLoading, setLikeLoading] = useState(false);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const { currentUser, userProfile } = useAuth();
   const [editing, setEditing] = useState(false);
@@ -109,22 +110,23 @@ const GlyphDetail = () => {
   };
 
   const handleLike = async () => {
-    if (!currentUser) {
-      navigate('/login');
+    if (!currentUser || likeLoading) {
+      if (!currentUser) navigate('/login');
       return;
     }
-
+    setLikeLoading(true);
     try {
+      const wasLiked = liked;
       const newLikedState = await toggleGlyphLike(id, currentUser.uid);
-      const increment_value = newLikedState ? 1 : -1;
-      
       setLiked(newLikedState);
       setGlyph(prev => ({
         ...prev,
-        likes: (prev.likes || 0) + increment_value
+        likes: (prev.likes || 0) + (wasLiked && !newLikedState ? -1 : (!wasLiked && newLikedState ? 1 : 0))
       }));
     } catch (error) {
       console.error('Error liking glyph:', error);
+    } finally {
+      setLikeLoading(false);
     }
   };
 
@@ -413,14 +415,15 @@ const GlyphDetail = () => {
               
               <button
                 onClick={handleLike}
+                disabled={likeLoading}
                 className={`px-6 py-3 rounded-lg font-semibold flex items-center justify-center space-x-2 transition-colors duration-200 min-w-[120px] ${
                   liked
                     ? 'bg-nothing-red text-nothing-white'
                     : 'border border-nothing-gray-700 text-nothing-white hover:border-nothing-gray-600'
-                }`}
+                } ${likeLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 <Heart className={`h-5 w-5 ${liked ? 'fill-current' : ''}`} />
-                <span>{liked ? 'Liked' : 'Like'}</span>
+                <span>{likeLoading ? '...' : liked ? 'Liked' : 'Like'}</span>
               </button>
               
               <button
