@@ -1,0 +1,17 @@
+/* Fades the bottom of the text for truncated descriptions */
+/* Fade effect for truncated description */
+.glyph-fade-text {
+  -webkit-mask-image: linear-gradient(180deg, #000 60%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 60%, transparent 100%);
+}
+
+/* Clamp text to 5 lines and fade at the end, with ellipsis at the end of the last line */
+.glyph-line-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  position: relative;
+  overflow-wrap: anywhere;
+}

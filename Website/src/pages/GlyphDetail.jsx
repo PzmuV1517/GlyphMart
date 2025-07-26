@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import './GlyphDetail.css';
+import './GlyphDetail.css';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { doc, getDoc, updateDoc, increment, collection, addDoc, deleteDoc, getDocs, query, where } from 'firebase/firestore';
 import { Download, Eye, Heart, Share2, AlertTriangle, Github, ExternalLink, Calendar, User } from 'lucide-react';
@@ -25,6 +27,7 @@ const GlyphDetail = () => {
   const [editError, setEditError] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [showFullDescription, setShowFullDescription] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -386,9 +389,35 @@ const GlyphDetail = () => {
                 </div>
               </div>
 
-              <p className="text-nothing-gray-300 text-lg leading-relaxed mb-6">
-                {glyph.description}
-              </p>
+            <div className="text-nothing-gray-300 text-lg leading-relaxed mb-6" style={{position: 'relative'}}>
+              {glyph.description ? (
+                <div style={{position: 'relative'}}>
+                  <span
+                    className={
+                      !showFullDescription
+                        ? 'glyph-fade-text glyph-line-clamp'
+                        : ''
+                    }
+                    style={
+                      showFullDescription
+                        ? {display: 'block', maxHeight: 'none', overflow: 'visible'}
+                        : undefined
+                    }
+                  >
+                    {glyph.description}
+                  </span>
+                  {/* Show button only if text is actually clamped (more than 5 lines) */}
+                  <button
+                    type="button"
+                    onClick={() => setShowFullDescription(v => !v)}
+                    className="ml-2 text-nothing-red hover:underline focus:outline-none relative z-10"
+                    style={{marginTop: '0.5em'}}
+                  >
+                    {showFullDescription ? 'Show Less' : 'Show More'}
+                  </button>
+                </div>
+              ) : null}
+            </div>
             </div>
 
             {/* Stats */}
