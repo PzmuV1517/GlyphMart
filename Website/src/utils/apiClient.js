@@ -124,6 +124,10 @@ class APIClient {
   }
 
   getFileUrl(type, filename) {
+    // Always use relative URLs in production to go through Nginx proxy
+    if (process.env.NODE_ENV === 'production' || window.location.hostname !== 'localhost') {
+      return `/api/files/${type}/${filename}`;
+    }
     return `${this.baseURL}/api/files/${type}/${filename}`;
   }
 
