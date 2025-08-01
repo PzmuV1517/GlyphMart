@@ -53,11 +53,9 @@ exec gunicorn \
     --worker-class sync \
     --worker-connections 1000 \
     --timeout 30 \
-    --keepalive 2 \
     --max-requests 1000 \
     --max-requests-jitter 50 \
     --access-logfile - \
     --error-logfile - \
     --log-level info \
-    --capture-output \
     app:app
