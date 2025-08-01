@@ -1,7 +1,7 @@
 // API client for GlyphMart backend
 import { auth } from './firebase';
 
-const API_BASE_URL = process.env.NODE_ENV === 'production' ? '' : 'http://127.0.0.1:5000';
+const API_BASE_URL = process.env.NODE_ENV === 'production' || window.location.hostname !== 'localhost' ? '' : 'http://127.0.0.1:5000';
 
 class APIClient {
   constructor() {
