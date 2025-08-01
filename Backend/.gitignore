@@ -29,7 +29,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-Backend/.env
+/Backend/.env
 
 # IDE
 .vscode/
