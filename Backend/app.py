@@ -996,16 +996,59 @@ def get_admin_stats():
         glyphs = list(glyphs_ref.stream())
         total_glyphs = len(glyphs)
         
-        # Calculate total downloads and views
-        total_downloads = sum(glyph.to_dict().get('downloads', 0) for glyph in glyphs)
-        total_views = sum(glyph.to_dict().get('views', 0) for glyph in glyphs)
+        # Get total views from the glyphViews collection (more accurate)
+        views_ref = db.collection('glyphViews')
+        views = list(views_ref.stream())
+        total_views = len(views)
+        
+        # Get total downloads from the glyphDownloads collection (more accurate)
+        downloads_ref = db.collection('glyphDownloads')
+        downloads = list(downloads_ref.stream())
+        total_downloads = len(downloads)
+        
+        # Get total likes
+        likes_ref = db.collection('likes')
+        likes = list(likes_ref.stream())
+        total_likes = len(likes)
+        
+        # Calculate unique viewers and downloaders
+        unique_view_ips = set()
+        unique_download_ips = set()
+        
+        for view in views:
+            view_data = view.to_dict()
+            if 'userIP' in view_data:
+                unique_view_ips.add(view_data['userIP'])
+        
+        for download in downloads:
+            download_data = download.to_dict()
+            if 'userIP' in download_data:
+                unique_download_ips.add(download_data['userIP'])
+        
+        # Calculate most popular glyphs
+        glyph_stats = {}
+        for glyph in glyphs:
+            glyph_data = glyph.to_dict()
+            glyph_stats[glyph.id] = {
+                'title': glyph_data.get('title', 'Unknown'),
+                'views': glyph_data.get('views', 0),
+                'downloads': glyph_data.get('downloads', 0),
+                'likes': glyph_data.get('likes', 0)
+            }
+        
+        # Sort by views to get top glyphs
+        top_glyphs = sorted(glyph_stats.items(), key=lambda x: x[1]['views'], reverse=True)[:10]
         
         return jsonify({
             'totalUsers': total_users,
             'totalGlyphs': total_glyphs,
             'totalDownloads': total_downloads,
             'totalViews': total_views,
-            'totalAdmins': total_admins
+            'totalLikes': total_likes,
+            'totalAdmins': total_admins,
+            'uniqueViewers': len(unique_view_ips),
+            'uniqueDownloaders': len(unique_download_ips),
+            'topGlyphs': [{'id': glyph_id, **stats} for glyph_id, stats in top_glyphs]
         })
         
     except Exception as e:

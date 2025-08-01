@@ -12,7 +12,8 @@ import {
   BarChart3,
   TrendingUp,
   Eye,
-  Download
+  Download,
+  Heart
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
@@ -28,7 +29,11 @@ const Admin = () => {
     totalGlyphs: 0,
     totalDownloads: 0,
     totalViews: 0,
-    totalAdmins: 0
+    totalLikes: 0,
+    totalAdmins: 0,
+    uniqueViewers: 0,
+    uniqueDownloaders: 0,
+    topGlyphs: []
   });
   
   // Users management
@@ -263,44 +268,106 @@ const Admin = () => {
           transition={{ duration: 0.3 }}
         >
           {activeTab === 'stats' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-              <div className="bg-nothing-gray-900 border border-nothing-gray-800 rounded-lg p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-nothing-gray-400 text-sm">Total Users</p>
-                    <p className="text-3xl font-bold text-nothing-white">{stats.totalUsers}</p>
+            <div className="space-y-6">
+              {/* Main Stats Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="bg-nothing-gray-900 border border-nothing-gray-800 rounded-lg p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-nothing-gray-400 text-sm">Total Users</p>
+                      <p className="text-3xl font-bold text-nothing-white">{stats.totalUsers}</p>
+                    </div>
+                    <Users className="h-8 w-8 text-blue-500" />
                   </div>
-                  <Users className="h-8 w-8 text-blue-500" />
+                </div>
+
+                <div className="bg-nothing-gray-900 border border-nothing-gray-800 rounded-lg p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-nothing-gray-400 text-sm">Total Glyphs</p>
+                      <p className="text-3xl font-bold text-nothing-white">{stats.totalGlyphs}</p>
+                    </div>
+                    <FileImage className="h-8 w-8 text-green-500" />
+                  </div>
+                </div>
+
+                <div className="bg-nothing-gray-900 border border-nothing-gray-800 rounded-lg p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-nothing-gray-400 text-sm">Total Downloads</p>
+                      <p className="text-3xl font-bold text-nothing-white">{stats.totalDownloads}</p>
+                      <p className="text-xs text-nothing-gray-500">Unique: {stats.uniqueDownloaders}</p>
+                    </div>
+                    <Download className="h-8 w-8 text-purple-500" />
+                  </div>
+                </div>
+
+                <div className="bg-nothing-gray-900 border border-nothing-gray-800 rounded-lg p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-nothing-gray-400 text-sm">Total Views</p>
+                      <p className="text-3xl font-bold text-nothing-white">{stats.totalViews}</p>
+                      <p className="text-xs text-nothing-gray-500">Unique: {stats.uniqueViewers}</p>
+                    </div>
+                    <Eye className="h-8 w-8 text-orange-500" />
+                  </div>
                 </div>
               </div>
 
-              <div className="bg-nothing-gray-900 border border-nothing-gray-800 rounded-lg p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-nothing-gray-400 text-sm">Total Glyphs</p>
-                    <p className="text-3xl font-bold text-nothing-white">{stats.totalGlyphs}</p>
+              {/* Secondary Stats */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-nothing-gray-900 border border-nothing-gray-800 rounded-lg p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-nothing-white">Additional Metrics</h3>
+                    <TrendingUp className="h-6 w-6 text-nothing-red" />
                   </div>
-                  <FileImage className="h-8 w-8 text-green-500" />
+                  <div className="space-y-3">
+                    <div className="flex justify-between">
+                      <span className="text-nothing-gray-400">Total Likes</span>
+                      <span className="text-nothing-white font-semibold">{stats.totalLikes}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-nothing-gray-400">Active Admins</span>
+                      <span className="text-nothing-white font-semibold">{stats.totalAdmins}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-nothing-gray-400">Avg Downloads/Glyph</span>
+                      <span className="text-nothing-white font-semibold">
+                        {stats.totalGlyphs > 0 ? Math.round(stats.totalDownloads / stats.totalGlyphs) : 0}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-nothing-gray-400">Avg Views/Glyph</span>
+                      <span className="text-nothing-white font-semibold">
+                        {stats.totalGlyphs > 0 ? Math.round(stats.totalViews / stats.totalGlyphs) : 0}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-              </div>
 
-              <div className="bg-nothing-gray-900 border border-nothing-gray-800 rounded-lg p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-nothing-gray-400 text-sm">Total Downloads</p>
-                    <p className="text-3xl font-bold text-nothing-white">{stats.totalDownloads}</p>
+                {/* Top Glyphs */}
+                <div className="bg-nothing-gray-900 border border-nothing-gray-800 rounded-lg p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-nothing-white">Top Performing Glyphs</h3>
+                    <BarChart3 className="h-6 w-6 text-nothing-red" />
                   </div>
-                  <Download className="h-8 w-8 text-purple-500" />
-                </div>
-              </div>
-
-              <div className="bg-nothing-gray-900 border border-nothing-gray-800 rounded-lg p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-nothing-gray-400 text-sm">Total Views</p>
-                    <p className="text-3xl font-bold text-nothing-white">{stats.totalViews}</p>
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {stats.topGlyphs.slice(0, 5).map((glyph, index) => (
+                      <div key={glyph.id} className="flex items-center justify-between p-2 bg-nothing-gray-800 rounded">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-nothing-red font-bold text-sm">#{index + 1}</span>
+                          <span className="text-nothing-white text-sm truncate max-w-32" title={glyph.title}>
+                            {glyph.title}
+                          </span>
+                        </div>
+                        <div className="flex items-center space-x-3 text-xs text-nothing-gray-400">
+                          <span>{glyph.views}v</span>
+                          <span>{glyph.downloads}d</span>
+                          <span>{glyph.likes}♥</span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <Eye className="h-8 w-8 text-orange-500" />
                 </div>
               </div>
             </div>
