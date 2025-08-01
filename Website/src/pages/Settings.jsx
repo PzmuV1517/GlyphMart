@@ -107,7 +107,7 @@ const Settings = () => {
       setUploadedProfilePicture(uploadedFile);
       setProfileData(prev => ({
         ...prev,
-        profilePicture: `http://127.0.0.1:5000${uploadedFile.url}`
+        profilePicture: uploadedFile.url  // Use relative URL directly
       }));
     } else if (removedFile) {
       // Profile picture was removed
@@ -125,7 +125,7 @@ const Settings = () => {
       setUploadedBannerImage(uploadedFile);
       setProfileData(prev => ({
         ...prev,
-        bannerImage: `http://127.0.0.1:5000${uploadedFile.url}`
+        bannerImage: uploadedFile.url  // Use relative URL directly
       }));
     } else if (removedFile) {
       // Banner image was removed

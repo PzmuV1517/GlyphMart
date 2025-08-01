@@ -169,7 +169,7 @@ const FileUpload = ({ onFileUpload, acceptedTypes = 'images', multiple = false, 
                 <div className="flex items-center space-x-3">
                   {file.thumbnail ? (
                     <img 
-                      src={`http://127.0.0.1:5000${file.thumbnail}`} 
+                      src={file.thumbnail}  // Use relative URL directly
                       alt="Preview" 
                       className="w-10 h-10 object-cover rounded"
                     />

@@ -191,14 +191,14 @@ const GlyphDetail = () => {
       setUploadedEditImages(prev => [...prev, uploadedFile]);
       setEditData(prev => ({
         ...prev,
-        images: [...prev.images, `http://127.0.0.1:5000${uploadedFile.url}`]
+        images: [...prev.images, uploadedFile.url]  // Use relative URL directly
       }));
     } else if (removedFile) {
       // Image was removed
       setUploadedEditImages(prev => prev.filter(f => f.id !== removedFile.id));
       setEditData(prev => ({
         ...prev,
-        images: prev.images.filter(url => url !== `http://127.0.0.1:5000${removedFile.url}`)
+        images: prev.images.filter(url => url !== removedFile.url)  // Use relative URL directly
       }));
     }
   };

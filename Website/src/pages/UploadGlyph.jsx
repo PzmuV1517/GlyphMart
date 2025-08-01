@@ -66,14 +66,14 @@ const UploadGlyph = () => {
       setUploadedImages(prev => [...prev, uploadedFile]);
       setFormData(prev => ({
         ...prev,
-        images: [...prev.images, `http://127.0.0.1:5000${uploadedFile.url}`]
+        images: [...prev.images, uploadedFile.url]  // Use relative URL directly
       }));
     } else if (removedFile) {
       // File was removed
       setUploadedImages(prev => prev.filter(f => f.id !== removedFile.id));
       setFormData(prev => ({
         ...prev,
-        images: prev.images.filter(url => url !== `http://127.0.0.1:5000${removedFile.url}`)
+        images: prev.images.filter(url => url !== removedFile.url)  // Use relative URL directly
       }));
     }
   };
@@ -84,7 +84,7 @@ const UploadGlyph = () => {
       setUploadedApk(uploadedFile);
       setFormData(prev => ({
         ...prev,
-        apkUrl: `http://127.0.0.1:5000${uploadedFile.url}`
+        apkUrl: uploadedFile.url  // Use relative URL directly
       }));
     } else if (removedFile) {
       // APK was removed
