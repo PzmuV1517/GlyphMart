@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Upload, X, Image, FileText } from 'lucide-react';
 import { motion } from 'framer-motion';
-import apiClient from '../utils/apiClient';
+import apiClient, { cleanImageUrl } from '../utils/apiClient';
 
 const FileUpload = ({ onFileUpload, acceptedTypes = 'images', multiple = false, maxFiles = 5 }) => {
   const [uploading, setUploading] = useState(false);
@@ -169,7 +169,7 @@ const FileUpload = ({ onFileUpload, acceptedTypes = 'images', multiple = false, 
                 <div className="flex items-center space-x-3">
                   {file.thumbnail ? (
                     <img 
-                      src={file.thumbnail}  // Use relative URL directly
+                      src={cleanImageUrl(file.thumbnail)}
                       alt="Preview" 
                       className="w-10 h-10 object-cover rounded"
                     />

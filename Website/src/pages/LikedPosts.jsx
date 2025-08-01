@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Heart, Download, Eye, User, Calendar } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
-import apiClient from '../utils/apiClient';
+import apiClient, { cleanImageUrl } from '../utils/apiClient';
 
 const LikedPosts = () => {
   const [likedGlyphs, setLikedGlyphs] = useState([]);
@@ -97,7 +97,7 @@ const LikedPosts = () => {
                     <div className="aspect-square bg-nothing-gray-800 relative overflow-hidden">
                       {glyph.images && glyph.images.length > 0 ? (
                         <img
-                          src={glyph.images[0]}
+                          src={cleanImageUrl(glyph.images[0])}
                           alt={glyph.title}
                           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                         />

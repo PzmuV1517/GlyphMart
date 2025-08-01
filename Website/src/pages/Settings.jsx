@@ -4,7 +4,7 @@ import { updateProfile, updatePassword, updateEmail, EmailAuthProvider, reauthen
 import { User, Mail, Lock, Settings as SettingsIcon, Save, Eye, EyeOff, AlertCircle, CheckCircle, Camera, Image as ImageIcon, Upload } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
-import apiClient from '../utils/apiClient';
+import apiClient, { cleanImageUrl } from '../utils/apiClient';
 import FileUpload from '../components/FileUpload';
 
 const Settings = () => {
@@ -320,7 +320,7 @@ const Settings = () => {
                       <div className="w-full h-32 bg-nothing-gray-800 rounded-lg border border-nothing-gray-700 overflow-hidden">
                         {profileData.bannerImage ? (
                           <img
-                            src={profileData.bannerImage}
+                            src={cleanImageUrl(profileData.bannerImage)}
                             alt="Banner preview"
                             className="w-full h-full object-cover"
                           />
@@ -375,7 +375,7 @@ const Settings = () => {
                         <div className="w-20 h-20 bg-nothing-gray-800 rounded-full border border-nothing-gray-700 overflow-hidden flex-shrink-0">
                           {profileData.profilePicture ? (
                             <img
-                              src={profileData.profilePicture}
+                              src={cleanImageUrl(profileData.profilePicture)}
                               alt="Profile preview"
                               className="w-full h-full object-cover"
                             />

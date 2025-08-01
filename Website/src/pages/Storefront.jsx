@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { MapPin, Globe, Calendar, Zap, Download, Eye, Heart } from 'lucide-react';
 import { motion } from 'framer-motion';
-import apiClient from '../utils/apiClient';
+import apiClient, { cleanImageUrl } from '../utils/apiClient';
 
 const Storefront = () => {
   const { username } = useParams();
@@ -92,7 +92,7 @@ const Storefront = () => {
         <div className="aspect-square bg-nothing-gray-800 relative overflow-hidden">
           {glyph.images && glyph.images.length > 0 ? (
             <img
-              src={glyph.images[0]}
+              src={cleanImageUrl(glyph.images[0])}
               alt={glyph.title}
               className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
             />

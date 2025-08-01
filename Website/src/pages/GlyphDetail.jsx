@@ -5,7 +5,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Download, Eye, Heart, Share2, AlertTriangle, Github, ExternalLink, Calendar, User } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
-import apiClient from '../utils/apiClient';
+import apiClient, { cleanImageUrl } from '../utils/apiClient';
 import FileUpload from '../components/FileUpload';
 
 const GlyphDetail = () => {
@@ -278,7 +278,7 @@ const GlyphDetail = () => {
             >
               {glyph.images && glyph.images.length > 0 ? (
                 <img
-                  src={glyph.images[0]}
+                  src={cleanImageUrl(glyph.images[0])}
                   alt={glyph.title}
                   className="w-full h-full object-cover"
                 />

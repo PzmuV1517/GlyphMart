@@ -2,6 +2,7 @@ import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Zap, Download, Heart, Eye } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { cleanImageUrl } from '../utils/apiClient';
 
 const GlyphCard = ({ glyph }) => {
   const navigate = useNavigate();
@@ -23,7 +24,7 @@ const GlyphCard = ({ glyph }) => {
         <div className="aspect-square bg-nothing-gray-800 relative overflow-hidden">
           {glyph.images && glyph.images.length > 0 ? (
             <img
-              src={glyph.images[0]}
+              src={cleanImageUrl(glyph.images[0])}
               alt={glyph.title}
               className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
             />

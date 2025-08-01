@@ -134,6 +134,35 @@ class APIClient {
     return `${this.baseURL}/api/files/${type}/${filename}`;
   }
 
+  // Clean URLs that might have hardcoded development server addresses
+  cleanImageUrl(url) {
+    if (!url) return url;
+    
+    // If it's already a relative URL, return as-is
+    if (url.startsWith('/api/files/')) {
+      return url;
+    }
+    
+    // Remove hardcoded development server URLs
+    if (url.includes('127.0.0.1:5000') || url.includes('localhost:5000')) {
+      // Extract just the API path part
+      const match = url.match(/\/api\/files\/.*$/);
+      if (match) {
+        return match[0];
+      }
+    }
+    
+    // If it's a full HTTP/HTTPS URL for our domain, make it relative
+    if (url.includes('glyphmart.andreibanu.com')) {
+      const match = url.match(/\/api\/files\/.*$/);
+      if (match) {
+        return match[0];
+      }
+    }
+    
+    return url;
+  }
+
   // View and download tracking
   async recordView(glyphId) {
     try {
@@ -228,3 +257,6 @@ export const toggleGlyphLike = async (glyphId) => {
   return result.liked;
 };
 export const getUserLikedGlyphs = () => apiClient.getUserLikes();
+
+// URL cleaning utility
+export const cleanImageUrl = (url) => apiClient.cleanImageUrl(url);
