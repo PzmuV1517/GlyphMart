@@ -196,7 +196,7 @@ const Storefront = () => {
         {user.bannerImage && (
           <div className="absolute inset-0 w-full h-full">
             <img
-              src={user.bannerImage}
+              src={cleanImageUrl(user.bannerImage)}
               alt="Profile banner"
               className="w-full h-full object-cover opacity-30"
             />
@@ -214,7 +214,7 @@ const Storefront = () => {
             <div className="w-24 h-24 rounded-full overflow-hidden mx-auto mb-6 border-4 border-nothing-white shadow-lg">
               {user.profilePicture ? (
                 <img
-                  src={user.profilePicture}
+                  src={cleanImageUrl(user.profilePicture)}
                   alt={user.displayName || user.username}
                   className="w-full h-full object-cover"
                 />

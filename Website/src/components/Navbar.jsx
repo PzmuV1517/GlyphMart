@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Search, User, Menu, X, LogOut, Settings, Plus, Heart, Store } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
+import { cleanImageUrl } from '../utils/apiClient';
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -76,7 +77,7 @@ const Navbar = () => {
                     <div className="w-8 h-8 rounded-full overflow-hidden border border-nothing-gray-600">
                       {userProfile?.profilePicture || currentUser.photoURL ? (
                         <img
-                          src={userProfile?.profilePicture || currentUser.photoURL}
+                          src={cleanImageUrl(userProfile?.profilePicture || currentUser.photoURL)}
                           alt="Profile"
                           className="w-full h-full object-cover"
                         />

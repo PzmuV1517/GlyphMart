@@ -624,7 +624,7 @@ const GlyphDetail = () => {
                       {editData.images.map((imageUrl, index) => (
                         <div key={index} className="relative">
                           <img
-                            src={imageUrl}
+                            src={cleanImageUrl(imageUrl)}
                             alt={`Preview ${index + 1}`}
                             className="w-full h-24 object-cover rounded-lg"
                           />
