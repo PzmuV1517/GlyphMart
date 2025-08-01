@@ -2,13 +2,10 @@ import React, { useState, useEffect } from 'react';
 import './GlyphDetail.css';
 import './GlyphDetail.css';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { doc, getDoc, updateDoc, increment, collection, addDoc, deleteDoc, getDocs, query, where } from 'firebase/firestore';
 import { Download, Eye, Heart, Share2, AlertTriangle, Github, ExternalLink, Calendar, User } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { db } from '../utils/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { recordGlyphView, recordGlyphDownload, getGlyphViewCount, getGlyphDownloadCount } from '../utils/viewTracking';
-import { hasUserLikedGlyph, toggleGlyphLike } from '../utils/likeTracking';
+import apiClient from '../utils/apiClient';
 
 const GlyphDetail = () => {
   const { id } = useParams();
@@ -16,8 +13,6 @@ const GlyphDetail = () => {
   const [loading, setLoading] = useState(true);
   const [downloadLoading, setDownloadLoading] = useState(false);
   const [liked, setLiked] = useState(false);
-  const [realViews, setRealViews] = useState(null);
-  const [realDownloads, setRealDownloads] = useState(null);
   const [likeLoading, setLikeLoading] = useState(false);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const { currentUser, userProfile } = useAuth();
@@ -33,30 +28,30 @@ const GlyphDetail = () => {
   useEffect(() => {
     const fetchGlyph = async () => {
       try {
-        const glyphDoc = await getDoc(doc(db, 'glyphs', id));
-        if (glyphDoc.exists()) {
-          const glyphData = { id: glyphDoc.id, ...glyphDoc.data() };
-          setGlyph(glyphData);
+        const glyphData = await apiClient.getGlyph(id);
+        
+        // Convert ISO string back to Date for display
+        if (glyphData.createdAt) {
+          glyphData.createdAt = new Date(glyphData.createdAt);
+        }
+        
+        setGlyph(glyphData);
 
-          // Record view with IP-based tracking (only increments if new IP)
-          await recordGlyphView(id);
+        // Record view with IP-based tracking (only increments if new IP)
+        await apiClient.recordView(id);
 
-          // Fetch real view and download count from glyphViews and glyphDownloads collections
-          const viewsCount = await getGlyphViewCount(id);
-          setRealViews(viewsCount);
-          const downloadsCount = await getGlyphDownloadCount(id);
-          setRealDownloads(downloadsCount);
-
-          // Check if current user has liked this glyph
-          if (currentUser) {
-            const userLiked = await hasUserLikedGlyph(id, currentUser.uid);
-            setLiked(userLiked);
-          }
+        // Check if current user has liked this glyph
+        if (currentUser) {
+          const userLiked = await apiClient.checkLikeStatus(id);
+          setLiked(userLiked);
         } else {
-          navigate('/404');
+          setLiked(false);
         }
       } catch (error) {
         console.error('Error fetching glyph:', error);
+        if (error.message.includes('not found')) {
+          navigate('/404');
+        }
       } finally {
         setLoading(false);
       }
@@ -78,7 +73,7 @@ const GlyphDetail = () => {
       window.open(glyph.githubUrl, '_blank');
       // Record download with IP-based tracking (only increments if new IP)
       try {
-        const wasNewDownload = await recordGlyphDownload(id);
+        const wasNewDownload = await apiClient.recordDownload(id);
         if (wasNewDownload) {
           setGlyph(prev => ({
             ...prev,
@@ -95,7 +90,7 @@ const GlyphDetail = () => {
     setDownloadLoading(true);
     try {
       // Record download with IP-based tracking (only increments if new IP)
-      const wasNewDownload = await recordGlyphDownload(id);
+      const wasNewDownload = await apiClient.recordDownload(id);
 
       // Create download link
       const link = document.createElement('a');
@@ -127,12 +122,11 @@ const GlyphDetail = () => {
     }
     setLikeLoading(true);
     try {
-      const wasLiked = liked;
-      const newLikedState = await toggleGlyphLike(id, currentUser.uid);
-      setLiked(newLikedState);
+      const result = await apiClient.toggleLike(id);
+      setLiked(result.liked);
       setGlyph(prev => ({
         ...prev,
-        likes: (prev.likes || 0) + (wasLiked && !newLikedState ? -1 : (!wasLiked && newLikedState ? 1 : 0))
+        likes: result.totalLikes
       }));
     } catch (error) {
       console.error('Error liking glyph:', error);
@@ -194,7 +188,7 @@ const GlyphDetail = () => {
     setEditLoading(true);
     setEditError('');
     try {
-      await updateDoc(doc(db, 'glyphs', glyph.id), {
+      await apiClient.updateGlyph(glyph.id, {
         title: editData.title,
         description: editData.description,
         apkUrl: editData.apkUrl,
@@ -314,26 +308,9 @@ const GlyphDetail = () => {
                         if (deleteLoading) return; // Prevent double delete
                         setDeleteLoading(true);
                         try {
-                          // Delete glyph document
-                          await deleteDoc(doc(db, 'glyphs', glyph.id));
-                          // Delete all likes
-                          const likesQuery = query(collection(db, 'likes'), where('glyphId', '==', glyph.id));
-                          const likesSnapshot = await getDocs(likesQuery);
-                          for (const likeDoc of likesSnapshot.docs) {
-                            await deleteDoc(likeDoc.ref);
-                          }
-                          // Delete all views
-                          const viewsQuery = query(collection(db, 'glyphViews'), where('glyphId', '==', glyph.id));
-                          const viewsSnapshot = await getDocs(viewsQuery);
-                          for (const viewDoc of viewsSnapshot.docs) {
-                            await deleteDoc(viewDoc.ref);
-                          }
-                          // Delete all downloads
-                          const downloadsQuery = query(collection(db, 'glyphDownloads'), where('glyphId', '==', glyph.id));
-                          const downloadsSnapshot = await getDocs(downloadsQuery);
-                          for (const downloadDoc of downloadsSnapshot.docs) {
-                            await deleteDoc(downloadDoc.ref);
-                          }
+                          await apiClient.deleteGlyph(glyph.id);
+                        } catch (error) {
+                          console.error('Error deleting glyph:', error);
                         } finally {
                           setDeleteLoading(false);
                           setShowDeleteConfirm(false);
@@ -426,7 +403,7 @@ const GlyphDetail = () => {
                 <Download className="h-5 w-5" />
                 <span>
                   {(() => {
-                    const count = realDownloads !== null ? realDownloads : (glyph.downloads || 0);
+                    const count = glyph.downloads || 0;
                     return `${count} ${count === 1 ? 'download' : 'downloads'}`;
                   })()}
                 </span>
@@ -435,7 +412,7 @@ const GlyphDetail = () => {
                 <Eye className="h-5 w-5" />
                 <span>
                   {(() => {
-                    const count = realViews !== null ? realViews : (glyph.views || 0);
+                    const count = glyph.views || 0;
                     return `${count} ${count === 1 ? 'view' : 'views'}`;
                   })()}
                 </span>

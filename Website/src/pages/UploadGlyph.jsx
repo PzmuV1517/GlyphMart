@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, addDoc, updateDoc, doc, increment, getDocs } from 'firebase/firestore';
 import { Upload, Image, Link2, Github, FileText, AlertCircle, Plus, X } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { db } from '../utils/firebase';
+import apiClient from '../utils/apiClient';
 import { useAuth } from '../contexts/AuthContext';
 
 const UploadGlyph = () => {
@@ -24,11 +23,7 @@ const UploadGlyph = () => {
   // Debug function to check all glyphs in database
   const checkAllGlyphs = async () => {
     try {
-      const glyphsSnapshot = await getDocs(collection(db, 'glyphs'));
-      const allGlyphs = glyphsSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      const allGlyphs = await apiClient.getGlyphs();
       
       const myGlyphs = allGlyphs.filter(glyph => glyph.creatorId === currentUser.uid);
       
@@ -162,18 +157,11 @@ const UploadGlyph = () => {
       };
 
       console.log('Creating glyph with data:', glyphData);
-      const docRef = await addDoc(collection(db, 'glyphs'), glyphData);
-      console.log('Glyph created with ID:', docRef.id);
-
-      // Update user's glyph count
-      if (userProfile) {
-        await updateDoc(doc(db, 'users', currentUser.uid), {
-          glyphsCount: increment(1)
-        });
-      }
+      const glyph = await apiClient.uploadGlyph(glyphData);
+      console.log('Glyph created with ID:', glyph.id);
 
       // Redirect to the new glyph page
-      navigate(`/glyph/${docRef.id}`);
+      navigate(`/glyph/${glyph.id}`);
     } catch (error) {
       console.error('Error creating glyph:', error);
       setError('Failed to upload glyph. Please try again.');

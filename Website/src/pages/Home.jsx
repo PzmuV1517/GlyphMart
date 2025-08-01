@@ -1,11 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, query, orderBy, limit, getDocs, where } from 'firebase/firestore';
 import { Zap, TrendingUp, Clock, Download, Eye, Heart } from 'lucide-react';
-import { getGlyphViewCount, getGlyphDownloadCount } from '../utils/viewTracking';
 import { motion } from 'framer-motion';
+import apiClient from '../utils/apiClient';
 import GlyphCard from '../components/GlyphCard';
-import { db } from '../utils/firebase';
 
 const Home = () => {
   const [latestGlyphs, setLatestGlyphs] = useState([]);
@@ -17,28 +15,10 @@ const Home = () => {
     const fetchGlyphs = async () => {
       try {
         // Fetch latest glyphs
-        const latestQuery = query(
-          collection(db, 'glyphs'),
-          orderBy('createdAt', 'desc'),
-          limit(12)
-        );
-        const latestSnapshot = await getDocs(latestQuery);
-        const latest = latestSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
+        const latest = await apiClient.getGlyphs({ sort: 'latest', limit: 12 });
 
         // Fetch popular glyphs (ordered by downloads)
-        const popularQuery = query(
-          collection(db, 'glyphs'),
-          orderBy('downloads', 'desc'),
-          limit(12)
-        );
-        const popularSnapshot = await getDocs(popularQuery);
-        const popular = popularSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
+        const popular = await apiClient.getGlyphs({ sort: 'popular', limit: 12 });
 
         setLatestGlyphs(latest);
         setPopularGlyphs(popular);

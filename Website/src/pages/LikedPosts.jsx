@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Heart, Download, Eye, User, Calendar } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
-import { getUserLikedGlyphs } from '../utils/likeTracking';
+import apiClient from '../utils/apiClient';
 
 const LikedPosts = () => {
   const [likedGlyphs, setLikedGlyphs] = useState([]);
@@ -19,7 +19,7 @@ const LikedPosts = () => {
 
       try {
         console.log('Fetching liked glyphs for user:', currentUser.uid);
-        const glyphs = await getUserLikedGlyphs(currentUser.uid);
+        const glyphs = await apiClient.getUserLikes();
         console.log('Retrieved liked glyphs:', glyphs);
         setLikedGlyphs(glyphs);
       } catch (error) {

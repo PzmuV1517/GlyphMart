@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { collection, query, where, orderBy, getDocs, limit } from 'firebase/firestore';
 import { Search as SearchIcon, Filter, SortAsc, SortDesc, Download, Eye, Heart, Zap, User } from 'lucide-react';
 import GlyphCard from '../components/GlyphCard';
 import { motion } from 'framer-motion';
-import { db } from '../utils/firebase';
+import apiClient from '../utils/apiClient';
 
 const Search = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -27,42 +26,14 @@ const Search = () => {
     
     setLoading(true);
     try {
-      // Since Firestore doesn't support full-text search natively,
-      // we'll fetch all glyphs and filter client-side for this demo
-      // In production, you'd want to use Algolia or similar service
-      
-      let glyphsQuery = collection(db, 'glyphs');
-      
-      // Apply sorting
-      switch (sort) {
-        case 'popular':
-          glyphsQuery = query(glyphsQuery, orderBy('downloads', 'desc'), limit(100));
-          break;
-        case 'liked':
-          glyphsQuery = query(glyphsQuery, orderBy('likes', 'desc'), limit(100));
-          break;
-        case 'viewed':
-          glyphsQuery = query(glyphsQuery, orderBy('views', 'desc'), limit(100));
-          break;
-        default:
-          glyphsQuery = query(glyphsQuery, orderBy('createdAt', 'desc'), limit(100));
-      }
+      // Use API client to search glyphs
+      const glyphs = await apiClient.getGlyphs({
+        search: searchTermRaw,
+        sort: sort,
+        limit: 100
+      });
 
-      const snapshot = await getDocs(glyphsQuery);
-      const allGlyphs = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-
-      // Client-side search filtering
-      const searchTerm = searchTermRaw.toLowerCase();
-      const filtered = allGlyphs.filter(glyph => 
-        glyph.title.toLowerCase().includes(searchTerm) ||
-        glyph.description.toLowerCase().includes(searchTerm) ||
-        glyph.creatorUsername.toLowerCase().includes(searchTerm)
-      );
-
-      setResults(filtered);
+      setResults(glyphs);
     } catch (error) {
       console.error('Error searching glyphs:', error);
       setResults([]);
@@ -76,6 +47,13 @@ const Search = () => {
     if (searchQuery.trim()) {
       setSearchParams({ q: searchQuery.trim() });
       performSearch(searchQuery.trim());
+    }
+  };
+
+  const handleSortChange = (newSort) => {
+    setSortBy(newSort);
+    if (searchQuery.trim()) {
+      performSearch(searchQuery.trim(), newSort, filterBy);
     }
   };
 

@@ -1,13 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { updateProfile, updatePassword, updateEmail, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
-import { 
-  doc, updateDoc, collection, query, where, getDocs, writeBatch, deleteDoc 
-} from 'firebase/firestore';
 import { User, Mail, Lock, Settings as SettingsIcon, Save, Eye, EyeOff, AlertCircle, CheckCircle, Camera, Image as ImageIcon, Upload } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { db } from '../utils/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import apiClient from '../utils/apiClient';
 
 const Settings = () => {
   const { currentUser, userProfile, logout } = useAuth();
@@ -79,7 +76,7 @@ const Settings = () => {
       }
 
       // Update Firestore user document
-      await updateDoc(doc(db, 'users', currentUser.uid), {
+      await apiClient.updateUser({
         username: profileData.username,
         displayName: profileData.displayName,
         bio: profileData.bio,
@@ -167,18 +164,7 @@ const Settings = () => {
 
 
       // Firestore v9+ modular syntax
-      const glyphsRef = collection(db, 'glyphs');
-      const glyphsQ = query(glyphsRef, where('creatorId', '==', currentUser.uid));
-      const glyphsSnap = await getDocs(glyphsQ);
-      const batch = writeBatch(db);
-      glyphsSnap.forEach(doc => {
-        batch.delete(doc.ref);
-      });
-      await batch.commit();
-
-      // Delete user document
-      const userDocRef = doc(db, 'users', currentUser.uid);
-      await deleteDoc(userDocRef);
+      await apiClient.deleteUserData();
 
       // Delete user account
       await currentUser.delete();

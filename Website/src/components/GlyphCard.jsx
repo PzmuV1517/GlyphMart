@@ -1,30 +1,25 @@
-import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import React from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { Zap, Download, Heart, Eye } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { getGlyphViewCount, getGlyphDownloadCount } from '../utils/viewTracking';
 
 const GlyphCard = ({ glyph }) => {
-  const [realViews, setRealViews] = useState(null);
-  const [realDownloads, setRealDownloads] = useState(null);
+  const navigate = useNavigate();
+  
+  const handleCardClick = () => {
+    navigate(`/glyph/${glyph.id}`);
+  };
 
-  useEffect(() => {
-    let mounted = true;
-    getGlyphViewCount(glyph.id).then(count => {
-      if (mounted) setRealViews(count);
-    });
-    getGlyphDownloadCount(glyph.id).then(count => {
-      if (mounted) setRealDownloads(count);
-    });
-    return () => { mounted = false; };
-  }, [glyph.id]);
+  const handleCreatorClick = (e) => {
+    e.stopPropagation();
+  };
 
   return (
     <motion.div
       whileHover={{ y: -5 }}
       className="bg-nothing-gray-900 border border-nothing-gray-800 rounded-lg overflow-hidden hover:border-nothing-gray-700 transition-all duration-300"
     >
-      <Link to={`/glyph/${glyph.id}`}>
+      <div className="cursor-pointer" onClick={handleCardClick}>
         <div className="aspect-square bg-nothing-gray-800 relative overflow-hidden">
           {glyph.images && glyph.images.length > 0 ? (
             <img
@@ -45,7 +40,7 @@ const GlyphCard = ({ glyph }) => {
               <div className="flex items-center justify-between text-nothing-white text-sm">
                 <div className="flex items-center space-x-2">
                   <Download className="h-4 w-4" />
-                  <span>{realDownloads !== null ? realDownloads : (glyph.downloads || 0)}</span>
+                  <span>{glyph.downloads || 0}</span>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Heart className="h-4 w-4" />
@@ -66,22 +61,23 @@ const GlyphCard = ({ glyph }) => {
             <Link
               to={`/storefront/${glyph.creatorUsername}`}
               className="text-nothing-red hover:text-red-400 text-sm font-medium transition-colors duration-200"
+              onClick={handleCreatorClick}
             >
               @{glyph.creatorUsername}
             </Link>
             <div className="flex items-center space-x-4 text-nothing-gray-500 text-sm">
               <div className="flex items-center space-x-1">
                 <Download className="h-3 w-3" />
-                <span>{realDownloads !== null ? realDownloads : (glyph.downloads || 0)}</span>
+                <span>{glyph.downloads || 0}</span>
               </div>
               <div className="flex items-center space-x-1">
                 <Eye className="h-3 w-3" />
-                <span>{realViews !== null ? realViews : (glyph.views || 0)}</span>
+                <span>{glyph.views || 0}</span>
               </div>
             </div>
           </div>
         </div>
-      </Link>
+      </div>
     </motion.div>
   );
 };

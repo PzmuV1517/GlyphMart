@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { collection, query, where, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
 import { MapPin, Globe, Calendar, Zap, Download, Eye, Heart } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { db } from '../utils/firebase';
+import apiClient from '../utils/apiClient';
 
 const Storefront = () => {
   const { username } = useParams();
@@ -24,30 +23,8 @@ const Storefront = () => {
       try {
         addDebug('Fetching storefront for username: ' + username);
         
-        // Find user by username or displayName
-        let usersQuery = query(
-          collection(db, 'users'),
-          where('username', '==', username)
-        );
-        let usersSnapshot = await getDocs(usersQuery);
-        
-        // If no user found by username, try displayName
-        if (usersSnapshot.empty) {
-          addDebug('No user found by username, trying displayName');
-          usersQuery = query(
-            collection(db, 'users'),
-            where('displayName', '==', username)
-          );
-          usersSnapshot = await getDocs(usersQuery);
-        }
-        
-        if (usersSnapshot.empty) {
-          addDebug('No user found with username or displayName: ' + username);
-          setLoading(false);
-          return;
-        }
-
-        const userData = usersSnapshot.docs[0].data();
+        // Get user by username
+        const userData = await apiClient.getUserByUsername(username);
         addDebug('Found user data: ' + JSON.stringify({
           uid: userData.uid,
           username: userData.username,
@@ -57,24 +34,10 @@ const Storefront = () => {
 
         // Fetch user's glyphs
         addDebug('Fetching glyphs for creatorId: ' + userData.uid);
-        
-        // Use simple query without orderBy to avoid index issues
-        let glyphsQuery = query(
-          collection(db, 'glyphs'),
-          where('creatorId', '==', userData.uid)
-        );
-        
-        const glyphsSnapshot = await getDocs(glyphsQuery);
-        let userGlyphs = glyphsSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-
-        // Sort client-side by creation date (newest first)
-        userGlyphs = userGlyphs.sort((a, b) => {
-          const aDate = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
-          const bDate = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
-          return bDate - aDate;
+        const userGlyphs = await apiClient.getGlyphs({ 
+          creator_id: userData.uid,
+          sort: 'latest',
+          limit: 100
         });
 
         addDebug('Found glyphs: ' + userGlyphs.length);
@@ -87,6 +50,14 @@ const Storefront = () => {
         } else {
           addDebug('No glyphs found for this user. Check if glyphs were created with the correct creatorId.');
         }
+        
+        // Convert createdAt strings back to Date objects for display
+        userGlyphs.forEach(glyph => {
+          if (glyph.createdAt) {
+            glyph.createdAt = new Date(glyph.createdAt);
+          }
+        });
+        
         setGlyphs(userGlyphs);
       } catch (error) {
         addDebug('Error fetching user data: ' + error.message);
