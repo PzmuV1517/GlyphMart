@@ -294,9 +294,8 @@ const Admin = () => {
                 <div className="bg-nothing-gray-900 border border-nothing-gray-800 rounded-lg p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-nothing-gray-400 text-sm">Total Downloads</p>
-                      <p className="text-3xl font-bold text-nothing-white">{stats.totalDownloads}</p>
-                      <p className="text-xs text-nothing-gray-500">Unique: {stats.uniqueDownloaders}</p>
+                      <p className="text-nothing-gray-400 text-sm">Unique Downloads</p>
+                      <p className="text-3xl font-bold text-nothing-white">{stats.uniqueDownloaders}</p>
                     </div>
                     <Download className="h-8 w-8 text-purple-500" />
                   </div>
@@ -305,9 +304,8 @@ const Admin = () => {
                 <div className="bg-nothing-gray-900 border border-nothing-gray-800 rounded-lg p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-nothing-gray-400 text-sm">Total Views</p>
-                      <p className="text-3xl font-bold text-nothing-white">{stats.totalViews}</p>
-                      <p className="text-xs text-nothing-gray-500">Unique: {stats.uniqueViewers}</p>
+                      <p className="text-nothing-gray-400 text-sm">Unique Views</p>
+                      <p className="text-3xl font-bold text-nothing-white">{stats.uniqueViewers}</p>
                     </div>
                     <Eye className="h-8 w-8 text-orange-500" />
                   </div>
@@ -331,15 +329,15 @@ const Admin = () => {
                       <span className="text-nothing-white font-semibold">{stats.totalAdmins}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-nothing-gray-400">Avg Downloads/Glyph</span>
+                      <span className="text-nothing-gray-400">Avg Unique Downloads/Glyph</span>
                       <span className="text-nothing-white font-semibold">
-                        {(stats.totalGlyphs || 0) > 0 ? Math.round((stats.totalDownloads || 0) / stats.totalGlyphs) : 0}
+                        {(stats.totalGlyphs || 0) > 0 ? Math.round((stats.uniqueDownloaders || 0) / stats.totalGlyphs) : 0}
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-nothing-gray-400">Avg Views/Glyph</span>
+                      <span className="text-nothing-gray-400">Avg Unique Views/Glyph</span>
                       <span className="text-nothing-white font-semibold">
-                        {(stats.totalGlyphs || 0) > 0 ? Math.round((stats.totalViews || 0) / stats.totalGlyphs) : 0}
+                        {(stats.totalGlyphs || 0) > 0 ? Math.round((stats.uniqueViewers || 0) / stats.totalGlyphs) : 0}
                       </span>
                     </div>
                   </div>
