@@ -1,11 +1,16 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Zap, Download, Heart, Eye } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { cleanImageUrl } from '../utils/apiClient';
 
-const GlyphCard = ({ glyph }) => {
+const GlyphCard = React.memo(({ glyph }) => {
   const navigate = useNavigate();
+  
+  // Memoize the cleaned image URL to avoid recalculating on every render
+  const imageUrl = useMemo(() => {
+    return glyph.images && glyph.images.length > 0 ? cleanImageUrl(glyph.images[0]) : null;
+  }, [glyph.images]);
   
   const handleCardClick = () => {
     navigate(`/glyph/${glyph.id}`);
@@ -22,10 +27,11 @@ const GlyphCard = ({ glyph }) => {
     >
       <div className="cursor-pointer" onClick={handleCardClick}>
         <div className="aspect-square bg-nothing-gray-800 relative overflow-hidden">
-          {glyph.images && glyph.images.length > 0 ? (
+          {imageUrl ? (
             <img
-              src={cleanImageUrl(glyph.images[0])}
+              src={imageUrl}
               alt={glyph.title}
+              loading="lazy"
               className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
             />
           ) : (
@@ -81,6 +87,8 @@ const GlyphCard = ({ glyph }) => {
       </div>
     </motion.div>
   );
-};
+});
+
+GlyphCard.displayName = 'GlyphCard';
 
 export default GlyphCard;

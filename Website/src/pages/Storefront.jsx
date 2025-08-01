@@ -94,6 +94,7 @@ const Storefront = () => {
             <img
               src={cleanImageUrl(glyph.images[0])}
               alt={glyph.title}
+              loading="lazy"
               className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
             />
           ) : (
@@ -216,6 +217,7 @@ const Storefront = () => {
                 <img
                   src={cleanImageUrl(user.profilePicture)}
                   alt={user.displayName || user.username}
+                  loading="lazy"
                   className="w-full h-full object-cover"
                 />
               ) : (

@@ -79,6 +79,7 @@ const Navbar = () => {
                         <img
                           src={cleanImageUrl(userProfile?.profilePicture || currentUser.photoURL)}
                           alt="Profile"
+                          loading="lazy"
                           className="w-full h-full object-cover"
                         />
                       ) : (

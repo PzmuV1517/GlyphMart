@@ -280,6 +280,7 @@ const GlyphDetail = () => {
                 <img
                   src={cleanImageUrl(glyph.images[0])}
                   alt={glyph.title}
+                  loading="lazy"
                   className="w-full h-full object-cover"
                 />
               ) : (

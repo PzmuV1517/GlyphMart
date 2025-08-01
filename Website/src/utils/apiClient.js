@@ -3,6 +3,9 @@ import { auth } from './firebase';
 
 const API_BASE_URL = process.env.NODE_ENV === 'production' || window.location.hostname !== 'localhost' ? '' : 'http://127.0.0.1:5000';
 
+// Memoization cache for cleaned URLs
+const urlCache = new Map();
+
 class APIClient {
   constructor() {
     this.baseURL = API_BASE_URL;
@@ -138,29 +141,37 @@ class APIClient {
   cleanImageUrl(url) {
     if (!url) return url;
     
-    // If it's already a relative URL, return as-is
+    // Check cache first
+    if (urlCache.has(url)) {
+      return urlCache.get(url);
+    }
+    
+    let cleanedUrl = url;
+    
+    // If it's already a relative URL, return as-is (most common case first)
     if (url.startsWith('/api/files/')) {
-      return url;
+      urlCache.set(url, cleanedUrl);
+      return cleanedUrl;
     }
     
-    // Remove hardcoded development server URLs
-    if (url.includes('127.0.0.1:5000') || url.includes('localhost:5000')) {
-      // Extract just the API path part
-      const match = url.match(/\/api\/files\/.*$/);
-      if (match) {
-        return match[0];
+    // Quick check for absolute URLs that need cleaning
+    if (url.includes('://')) {
+      // Remove hardcoded development server URLs
+      if (url.includes('127.0.0.1:5000') || url.includes('localhost:5000')) {
+        const match = url.match(/\/api\/files\/.*$/);
+        if (match) cleanedUrl = match[0];
+      }
+      
+      // If it's a full HTTP/HTTPS URL for our domain, make it relative
+      else if (url.includes('glyphmart.andreibanu.com')) {
+        const match = url.match(/\/api\/files\/.*$/);
+        if (match) cleanedUrl = match[0];
       }
     }
     
-    // If it's a full HTTP/HTTPS URL for our domain, make it relative
-    if (url.includes('glyphmart.andreibanu.com')) {
-      const match = url.match(/\/api\/files\/.*$/);
-      if (match) {
-        return match[0];
-      }
-    }
-    
-    return url;
+    // Cache the result
+    urlCache.set(url, cleanedUrl);
+    return cleanedUrl;
   }
 
   // View and download tracking
