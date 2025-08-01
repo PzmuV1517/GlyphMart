@@ -99,7 +99,10 @@ class APIClient {
     formData.append('type', type);
 
     const token = await this.getAuthToken();
-    const response = await fetch(`${this.baseURL}/api/upload-file`, {
+    
+    // Use the same base URL logic as other requests
+    const baseURL = process.env.NODE_ENV === 'production' || window.location.hostname !== 'localhost' ? '' : 'http://127.0.0.1:5000';
+    const response = await fetch(`${baseURL}/api/upload-file`, {
       method: 'POST',
       headers: {
         'Authorization': token ? `Bearer ${token}` : '',
