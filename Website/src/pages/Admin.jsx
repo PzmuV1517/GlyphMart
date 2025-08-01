@@ -333,13 +333,13 @@ const Admin = () => {
                     <div className="flex justify-between">
                       <span className="text-nothing-gray-400">Avg Downloads/Glyph</span>
                       <span className="text-nothing-white font-semibold">
-                        {stats.totalGlyphs > 0 ? Math.round(stats.totalDownloads / stats.totalGlyphs) : 0}
+                        {(stats.totalGlyphs || 0) > 0 ? Math.round((stats.totalDownloads || 0) / stats.totalGlyphs) : 0}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-nothing-gray-400">Avg Views/Glyph</span>
                       <span className="text-nothing-white font-semibold">
-                        {stats.totalGlyphs > 0 ? Math.round(stats.totalViews / stats.totalGlyphs) : 0}
+                        {(stats.totalGlyphs || 0) > 0 ? Math.round((stats.totalViews || 0) / stats.totalGlyphs) : 0}
                       </span>
                     </div>
                   </div>
@@ -352,7 +352,7 @@ const Admin = () => {
                     <BarChart3 className="h-6 w-6 text-nothing-red" />
                   </div>
                   <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {stats.topGlyphs.slice(0, 5).map((glyph, index) => (
+                    {(stats.topGlyphs || []).slice(0, 5).map((glyph, index) => (
                       <div key={glyph.id} className="flex items-center justify-between p-2 bg-nothing-gray-800 rounded">
                         <div className="flex items-center space-x-2">
                           <span className="text-nothing-red font-bold text-sm">#{index + 1}</span>
@@ -367,6 +367,11 @@ const Admin = () => {
                         </div>
                       </div>
                     ))}
+                    {(!stats.topGlyphs || stats.topGlyphs.length === 0) && (
+                      <div className="text-center text-nothing-gray-400 py-4">
+                        <p>No glyph data available yet</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -392,10 +397,10 @@ const Admin = () => {
               {/* Users List */}
               <div className="bg-nothing-gray-900 border border-nothing-gray-800 rounded-lg overflow-hidden">
                 <div className="px-6 py-4 border-b border-nothing-gray-800">
-                  <h3 className="text-lg font-semibold">Users ({filteredUsers.length})</h3>
+                  <h3 className="text-lg font-semibold">Users ({(filteredUsers || []).length})</h3>
                 </div>
                 <div className="max-h-96 overflow-y-auto">
-                  {filteredUsers.map((user) => (
+                  {(filteredUsers || []).map((user) => (
                     <div key={user.uid} className="px-6 py-4 border-b border-nothing-gray-800 last:border-b-0 hover:bg-nothing-gray-800 transition-colors duration-200">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-4">
@@ -455,10 +460,10 @@ const Admin = () => {
             <div className="space-y-6">
               <div className="bg-nothing-gray-900 border border-nothing-gray-800 rounded-lg overflow-hidden">
                 <div className="px-6 py-4 border-b border-nothing-gray-800">
-                  <h3 className="text-lg font-semibold">All Glyphs ({allGlyphs.length})</h3>
+                  <h3 className="text-lg font-semibold">All Glyphs ({(allGlyphs || []).length})</h3>
                 </div>
                 <div className="max-h-96 overflow-y-auto">
-                  {allGlyphs.map((glyph) => (
+                  {(allGlyphs || []).map((glyph) => (
                     <div key={glyph.id} className="px-6 py-4 border-b border-nothing-gray-800 last:border-b-0 hover:bg-nothing-gray-800 transition-colors duration-200">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-4">
