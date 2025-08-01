@@ -11,6 +11,7 @@ import UploadGlyph from './pages/UploadGlyph';
 import Search from './pages/Search';
 import LikedPosts from './pages/LikedPosts';
 import Settings from './pages/Settings';
+import Admin from './pages/Admin';
 import './App.css';
 
 // Protected Route component
@@ -73,6 +74,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <Settings />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/admin" 
+              element={
+                <ProtectedRoute>
+                  <Admin />
                 </ProtectedRoute>
               } 
             />

@@ -939,7 +939,244 @@ def test_upload_file():
 def ratelimit_handler(e):
     return jsonify({'error': 'Rate limit exceeded. Please try again later.'}), 429
 
-@app.errorhandler(404)
+# Admin endpoints
+def require_admin(f):
+    """Decorator to require admin privileges"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        try:
+            # First require authentication
+            auth_header = request.headers.get('Authorization')
+            if not auth_header or not auth_header.startswith('Bearer '):
+                return jsonify({'error': 'No authorization token provided'}), 401
+            
+            token = auth_header.split(' ')[1]
+            decoded_token = auth.verify_id_token(token)
+            uid = decoded_token['uid']
+            
+            # Check if user is the super admin
+            if uid == '9H3pw5zS6GRDFTZaoYspEmruORj2':
+                request.current_user_uid = uid
+                return f(*args, **kwargs)
+            
+            # Check if user has admin role in Firestore
+            users_ref = db.collection('users')
+            user_doc = users_ref.document(uid).get()
+            
+            if user_doc.exists:
+                user_data = user_doc.to_dict()
+                if user_data.get('isAdmin', False):
+                    request.current_user_uid = uid
+                    return f(*args, **kwargs)
+            
+            return jsonify({'error': 'Admin privileges required'}), 403
+            
+        except Exception as e:
+            logger.error(f"Admin auth error: {str(e)}")
+            return jsonify({'error': 'Invalid token'}), 401
+    
+    return decorated_function
+
+@app.route('/api/admin/stats', methods=['GET'])
+@limiter.limit("30/minute")
+@require_admin
+def get_admin_stats():
+    """Get admin statistics"""
+    try:
+        # Get total users
+        users_ref = db.collection('users')
+        users = list(users_ref.stream())
+        total_users = len(users)
+        
+        # Count admins
+        total_admins = sum(1 for user in users if user.to_dict().get('isAdmin', False)) + 1  # +1 for super admin
+        
+        # Get total glyphs
+        glyphs_ref = db.collection('glyphs')
+        glyphs = list(glyphs_ref.stream())
+        total_glyphs = len(glyphs)
+        
+        # Calculate total downloads and views
+        total_downloads = sum(glyph.to_dict().get('downloads', 0) for glyph in glyphs)
+        total_views = sum(glyph.to_dict().get('views', 0) for glyph in glyphs)
+        
+        return jsonify({
+            'totalUsers': total_users,
+            'totalGlyphs': total_glyphs,
+            'totalDownloads': total_downloads,
+            'totalViews': total_views,
+            'totalAdmins': total_admins
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting admin stats: {str(e)}")
+        return jsonify({'error': 'Failed to get stats'}), 500
+
+@app.route('/api/admin/users', methods=['GET'])
+@limiter.limit("30/minute")
+@require_admin
+def get_all_users():
+    """Get all users for admin panel"""
+    try:
+        users_ref = db.collection('users')
+        users = users_ref.stream()
+        
+        user_list = []
+        for user in users:
+            user_data = user.to_dict()
+            user_data['uid'] = user.id
+            user_list.append(user_data)
+        
+        # Sort by creation date or username
+        user_list.sort(key=lambda x: x.get('username', '').lower())
+        
+        return jsonify({'users': user_list})
+        
+    except Exception as e:
+        logger.error(f"Error getting users: {str(e)}")
+        return jsonify({'error': 'Failed to get users'}), 500
+
+@app.route('/api/admin/users/<user_id>', methods=['PUT'])
+@limiter.limit("10/minute")
+@require_admin
+def admin_update_user(user_id):
+    """Update user data as admin"""
+    try:
+        data = request.get_json()
+        
+        # Update user in Firestore
+        user_ref = db.collection('users').document(user_id)
+        
+        # Build update data
+        update_data = {}
+        allowed_fields = ['username', 'displayName', 'bio', 'profilePicture', 'bannerImage', 'isAdmin']
+        
+        for field in allowed_fields:
+            if field in data:
+                update_data[field] = data[field]
+        
+        if update_data:
+            update_data['updatedAt'] = datetime.now(timezone.utc)
+            user_ref.update(update_data)
+        
+        return jsonify({'success': True, 'message': 'User updated successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error updating user: {str(e)}")
+        return jsonify({'error': 'Failed to update user'}), 500
+
+@app.route('/api/admin/make-admin/<user_id>', methods=['POST'])
+@limiter.limit("5/minute")
+@require_admin
+def make_user_admin(user_id):
+    """Make a user an admin"""
+    try:
+        user_ref = db.collection('users').document(user_id)
+        user_doc = user_ref.get()
+        
+        if not user_doc.exists:
+            return jsonify({'error': 'User not found'}), 404
+        
+        # Update user to admin
+        user_ref.update({
+            'isAdmin': True,
+            'updatedAt': datetime.now(timezone.utc)
+        })
+        
+        return jsonify({'success': True, 'message': 'User promoted to admin successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error making user admin: {str(e)}")
+        return jsonify({'error': 'Failed to promote user'}), 500
+
+@app.route('/api/admin/add-admin', methods=['POST'])
+@limiter.limit("5/minute")
+@require_admin
+def add_admin_by_email():
+    """Add admin by email address"""
+    try:
+        data = request.get_json()
+        email = data.get('email')
+        
+        if not email:
+            return jsonify({'error': 'Email is required'}), 400
+        
+        # Find user by email in Firestore
+        users_ref = db.collection('users')
+        users = users_ref.where('email', '==', email).stream()
+        
+        user_found = None
+        for user in users:
+            user_found = user
+            break
+        
+        if not user_found:
+            return jsonify({'error': 'User with this email not found'}), 404
+        
+        # Update user to admin
+        user_ref = db.collection('users').document(user_found.id)
+        user_ref.update({
+            'isAdmin': True,
+            'updatedAt': datetime.now(timezone.utc)
+        })
+        
+        return jsonify({'success': True, 'message': 'Admin added successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error adding admin: {str(e)}")
+        return jsonify({'error': 'Failed to add admin'}), 500
+
+@app.route('/api/admin/glyphs/<glyph_id>', methods=['DELETE'])
+@limiter.limit("10/minute")
+@require_admin
+def admin_delete_glyph(glyph_id):
+    """Delete any glyph as admin"""
+    try:
+        glyph_ref = db.collection('glyphs').document(glyph_id)
+        glyph_doc = glyph_ref.get()
+        
+        if not glyph_doc.exists:
+            return jsonify({'error': 'Glyph not found'}), 404
+        
+        glyph_data = glyph_doc.to_dict()
+        
+        # Delete associated files
+        try:
+            if glyph_data.get('images'):
+                for image_url in glyph_data['images']:
+                    # Extract filename from URL and delete file
+                    if '/api/files/' in image_url:
+                        path_parts = image_url.split('/api/files/')[-1].split('/')
+                        if len(path_parts) >= 2:
+                            file_type, filename = path_parts[0], path_parts[1]
+                            file_path = os.path.join(app.config['UPLOAD_FOLDER'], file_type, filename)
+                            if os.path.exists(file_path):
+                                os.remove(file_path)
+                            # Also try to delete thumbnail
+                            thumb_path = os.path.join(app.config['UPLOAD_FOLDER'], file_type, f"thumb_{filename}")
+                            if os.path.exists(thumb_path):
+                                os.remove(thumb_path)
+        except Exception as file_error:
+            logger.warning(f"Error deleting files for glyph {glyph_id}: {str(file_error)}")
+        
+        # Delete the glyph document
+        glyph_ref.delete()
+        
+        # Also delete from likes collection
+        likes_ref = db.collection('likes')
+        likes_query = likes_ref.where('glyphId', '==', glyph_id)
+        likes_docs = likes_query.stream()
+        
+        for like_doc in likes_docs:
+            like_doc.reference.delete()
+        
+        return jsonify({'success': True, 'message': 'Glyph deleted successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error deleting glyph: {str(e)}")
+        return jsonify({'error': 'Failed to delete glyph'}), 500
+
+@app.errorhandler(429)
 def not_found_handler(e):
     return jsonify({'error': 'Endpoint not found'}), 404
 

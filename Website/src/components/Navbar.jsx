@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Search, User, Menu, X, LogOut, Settings, Plus, Heart, Store } from 'lucide-react';
+import { Search, User, Menu, X, LogOut, Settings, Plus, Heart, Store, Crown } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cleanImageUrl } from '../utils/apiClient';
@@ -11,6 +11,10 @@ const Navbar = () => {
   const { currentUser, userProfile, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Check if user is admin
+  const isAdmin = currentUser?.uid === '9H3pw5zS6GRDFTZaoYspEmruORj2' || 
+                  userProfile?.isAdmin === true;
 
   const handleLogout = async () => {
     try {
@@ -115,6 +119,15 @@ const Navbar = () => {
                         <Settings className="h-4 w-4" />
                         <span>Settings</span>
                       </Link>
+                      {isAdmin && (
+                        <Link
+                          to="/admin"
+                          className="block px-4 py-2 text-sm text-nothing-white hover:bg-nothing-gray-800 transition-colors duration-200 flex items-center space-x-2"
+                        >
+                          <Crown className="h-4 w-4" />
+                          <span>Admin Panel</span>
+                        </Link>
+                      )}
                       <button
                         onClick={handleLogout}
                         className="w-full text-left block px-4 py-2 text-sm text-nothing-white hover:bg-nothing-gray-800 transition-colors duration-200 flex items-center space-x-2"
@@ -213,6 +226,16 @@ const Navbar = () => {
                     <Settings className="h-4 w-4" />
                     <span>Settings</span>
                   </Link>
+                  {isAdmin && (
+                    <Link
+                      to="/admin"
+                      className="block text-nothing-white hover:text-nothing-gray-300 font-medium transition-colors duration-200 flex items-center space-x-2"
+                      onClick={() => setIsMenuOpen(false)}
+                    >
+                      <Crown className="h-4 w-4" />
+                      <span>Admin Panel</span>
+                    </Link>
+                  )}
                   <button
                     onClick={() => {
                       handleLogout();

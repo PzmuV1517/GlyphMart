@@ -254,6 +254,47 @@ class APIClient {
     const response = await this.request('/health');
     return response;
   }
+
+  // Admin methods
+  async getAdminStats() {
+    const response = await this.request('/admin/stats');
+    return response;
+  }
+
+  async getAllUsers() {
+    const response = await this.request('/admin/users');
+    return response.users;
+  }
+
+  async adminUpdateUser(userId, userData) {
+    const response = await this.request(`/admin/users/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify(userData),
+    });
+    return response;
+  }
+
+  async makeUserAdmin(userId) {
+    const response = await this.request(`/admin/make-admin/${userId}`, {
+      method: 'POST',
+    });
+    return response;
+  }
+
+  async addAdminByEmail(email) {
+    const response = await this.request('/admin/add-admin', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+    return response;
+  }
+
+  async adminDeleteGlyph(glyphId) {
+    const response = await this.request(`/admin/glyphs/${glyphId}`, {
+      method: 'DELETE',
+    });
+    return response;
+  }
 }
 
 export const apiClient = new APIClient();
