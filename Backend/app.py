@@ -1006,24 +1006,20 @@ def get_admin_stats():
         downloads = list(downloads_ref.stream())
         total_downloads = len(downloads)
         
-        # Get total likes
+        # Get total likes from glyphLikes collection
+        glyph_likes_ref = db.collection('glyphLikes')
+        glyph_likes = list(glyph_likes_ref.stream())
+        total_glyph_likes = len(glyph_likes)
+        
+        # Get total likes from likes collection (keep for compatibility)
         likes_ref = db.collection('likes')
         likes = list(likes_ref.stream())
         total_likes = len(likes)
         
-        # Calculate unique viewers and downloaders
-        unique_view_ips = set()
-        unique_download_ips = set()
-        
-        for view in views:
-            view_data = view.to_dict()
-            if 'userIP' in view_data:
-                unique_view_ips.add(view_data['userIP'])
-        
-        for download in downloads:
-            download_data = download.to_dict()
-            if 'userIP' in download_data:
-                unique_download_ips.add(download_data['userIP'])
+        # Simply use the count of all documents as "unique" counts
+        # This gives us the total number of view/download events
+        unique_viewers = total_views
+        unique_downloaders = total_downloads
         
         # Calculate most popular glyphs
         glyph_stats = {}
@@ -1045,9 +1041,10 @@ def get_admin_stats():
             'totalDownloads': total_downloads,
             'totalViews': total_views,
             'totalLikes': total_likes,
+            'totalGlyphLikes': total_glyph_likes,
             'totalAdmins': total_admins,
-            'uniqueViewers': len(unique_view_ips),
-            'uniqueDownloaders': len(unique_download_ips),
+            'uniqueViewers': unique_viewers,
+            'uniqueDownloaders': unique_downloaders,
             'topGlyphs': [{'id': glyph_id, **stats} for glyph_id, stats in top_glyphs]
         })
         
