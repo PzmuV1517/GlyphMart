@@ -4,16 +4,19 @@ import { Upload, Image, Link2, Github, FileText, AlertCircle, Plus, X } from 'lu
 import { motion } from 'framer-motion';
 import apiClient from '../utils/apiClient';
 import { useAuth } from '../contexts/AuthContext';
+import FileUpload from '../components/FileUpload';
 
 const UploadGlyph = () => {
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    images: [''], // Array of image URLs
+    images: [], // Array of uploaded image URLs
     apkUrl: '',
     githubUrl: '',
     instructions: ''
   });
+  const [uploadedImages, setUploadedImages] = useState([]);
+  const [uploadedApk, setUploadedApk] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [debugInfo, setDebugInfo] = useState('');
@@ -57,30 +60,38 @@ const UploadGlyph = () => {
     setError('');
   };
 
-  const handleImageUrlChange = (index, value) => {
-    const newImages = [...formData.images];
-    newImages[index] = value;
-    setFormData(prev => ({
-      ...prev,
-      images: newImages
-    }));
-  };
-
-  const addImageUrl = () => {
-    if (formData.images.length < 5) {
+  const handleImageUpload = (uploadedFile, removedFile) => {
+    if (uploadedFile) {
+      // File was uploaded
+      setUploadedImages(prev => [...prev, uploadedFile]);
       setFormData(prev => ({
         ...prev,
-        images: [...prev.images, '']
+        images: [...prev.images, `http://127.0.0.1:5000${uploadedFile.url}`]
+      }));
+    } else if (removedFile) {
+      // File was removed
+      setUploadedImages(prev => prev.filter(f => f.id !== removedFile.id));
+      setFormData(prev => ({
+        ...prev,
+        images: prev.images.filter(url => url !== `http://127.0.0.1:5000${removedFile.url}`)
       }));
     }
   };
 
-  const removeImageUrl = (index) => {
-    if (formData.images.length > 1) {
-      const newImages = formData.images.filter((_, i) => i !== index);
+  const handleApkUpload = (uploadedFile, removedFile) => {
+    if (uploadedFile) {
+      // APK was uploaded
+      setUploadedApk(uploadedFile);
       setFormData(prev => ({
         ...prev,
-        images: newImages
+        apkUrl: `http://127.0.0.1:5000${uploadedFile.url}`
+      }));
+    } else if (removedFile) {
+      // APK was removed
+      setUploadedApk(null);
+      setFormData(prev => ({
+        ...prev,
+        apkUrl: ''
       }));
     }
   };
@@ -95,32 +106,17 @@ const UploadGlyph = () => {
       return false;
     }
     
-    // Require either APK URL or GitHub URL (or both)
+    // Require either APK file/URL or GitHub URL (or both)
     if (!formData.apkUrl.trim() && !formData.githubUrl.trim()) {
-      setError('Either APK download URL or GitHub repository URL is required');
+      setError('Either APK file or GitHub repository URL is required');
       return false;
     }
 
-    // Validate URLs
+    // Validate GitHub URL if provided
     const urlPattern = /^https?:\/\/.+/;
-    if (formData.apkUrl.trim() && !urlPattern.test(formData.apkUrl)) {
-      setError('APK URL must be a valid HTTP/HTTPS URL');
-      return false;
-    }
-
     if (formData.githubUrl.trim() && !urlPattern.test(formData.githubUrl)) {
       setError('GitHub URL must be a valid HTTP/HTTPS URL');
       return false;
-    }
-
-    // Validate image URLs (if provided)
-    const validImages = formData.images.filter(url => url.trim());
-    
-    for (const imageUrl of validImages) {
-      if (!urlPattern.test(imageUrl)) {
-        setError('All image URLs must be valid HTTP/HTTPS URLs');
-        return false;
-      }
     }
 
     return true;
@@ -137,14 +133,11 @@ const UploadGlyph = () => {
     }
 
     try {
-      // Filter out empty image URLs
-      const validImages = formData.images.filter(url => url.trim());
-
       // Create glyph document
       const glyphData = {
         title: formData.title.trim(),
         description: formData.description.trim(),
-        images: validImages.length > 0 ? validImages : [], // Empty array if no images
+        images: formData.images, // Already contains full URLs from uploads
         apkUrl: formData.apkUrl.trim() || null,
         githubUrl: formData.githubUrl.trim() || null,
         instructions: formData.instructions.trim() || null,
@@ -230,58 +223,47 @@ const UploadGlyph = () => {
               />
             </div>
 
-            {/* Image URLs */}
+            {/* Image Upload */}
             <div>
               <label className="block text-sm font-medium text-nothing-white mb-2">
-                Image URLs (Optional)
+                Images (Optional)
               </label>
               <p className="text-sm text-nothing-gray-400 mb-4">
-                Add URLs to images showcasing your glyph (screenshots, demos, etc.)
+                Upload images showcasing your glyph (screenshots, demos, etc.)
               </p>
-              
-              {formData.images.map((imageUrl, index) => (
-                <div key={index} className="flex items-center space-x-2 mb-3">
-                  <div className="relative flex-1">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Image className="h-5 w-5 text-nothing-gray-400" />
-                    </div>
-                    <input
-                      type="url"
-                      value={imageUrl}
-                      onChange={(e) => handleImageUrlChange(index, e.target.value)}
-                      placeholder="https://example.com/image.jpg"
-                      className="w-full pl-10 pr-4 py-3 bg-nothing-gray-800 border border-nothing-gray-700 rounded-lg text-nothing-white placeholder-nothing-gray-400 focus:outline-none focus:ring-2 focus:ring-nothing-red focus:border-transparent transition-all duration-200"
-                    />
-                  </div>
-                  {formData.images.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeImageUrl(index)}
-                      className="p-2 text-nothing-gray-400 hover:text-nothing-red transition-colors duration-200"
-                    >
-                      <X className="h-5 w-5" />
-                    </button>
-                  )}
-                </div>
-              ))}
-              
-              {formData.images.length < 5 && (
-                <button
-                  type="button"
-                  onClick={addImageUrl}
-                  className="flex items-center space-x-2 text-nothing-red hover:text-red-400 text-sm font-medium transition-colors duration-200"
-                >
-                  <Plus className="h-4 w-4" />
-                  <span>Add another image</span>
-                </button>
-              )}
+              <div className="bg-nothing-gray-800 rounded-lg p-4">
+                <FileUpload
+                  onFileUpload={handleImageUpload}
+                  acceptedTypes="images"
+                  multiple={true}
+                  maxFiles={5}
+                />
+              </div>
             </div>
 
-            {/* APK URL */}
+            {/* APK Upload or URL */}
             <div>
-              <label htmlFor="apkUrl" className="block text-sm font-medium text-nothing-white mb-2">
-                APK Download URL
+              <label className="block text-sm font-medium text-nothing-white mb-2">
+                APK File or Download URL
               </label>
+              <p className="text-sm text-nothing-gray-400 mb-4">
+                Upload an APK file directly or provide a download URL
+              </p>
+              
+              {/* APK File Upload */}
+              <div className="bg-nothing-gray-800 rounded-lg p-4 mb-4">
+                <FileUpload
+                  onFileUpload={handleApkUpload}
+                  acceptedTypes="apks"
+                  multiple={false}
+                />
+              </div>
+
+              {/* APK URL Alternative */}
+              <div className="text-center text-nothing-gray-400 mb-4">
+                <span className="px-3 py-1 bg-nothing-gray-800 rounded">OR</span>
+              </div>
+
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <Link2 className="h-5 w-5 text-nothing-gray-400" />
@@ -290,14 +272,15 @@ const UploadGlyph = () => {
                   type="url"
                   id="apkUrl"
                   name="apkUrl"
-                  value={formData.apkUrl}
+                  value={uploadedApk ? formData.apkUrl : formData.apkUrl}
                   onChange={handleChange}
                   placeholder="https://github.com/username/repo/releases/download/v1.0/glyph.apk"
                   className="w-full pl-10 pr-4 py-3 bg-nothing-gray-800 border border-nothing-gray-700 rounded-lg text-nothing-white placeholder-nothing-gray-400 focus:outline-none focus:ring-2 focus:ring-nothing-red focus:border-transparent transition-all duration-200"
+                  disabled={!!uploadedApk}
                 />
               </div>
               <p className="text-sm text-nothing-gray-400 mt-2">
-                Direct link to your APK file (GitHub Releases, Google Drive, etc.)
+                {uploadedApk ? 'APK file uploaded' : 'Direct link to your APK file (GitHub Releases, Google Drive, etc.)'}
               </p>
             </div>
 

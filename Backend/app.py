@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -7,16 +7,48 @@ from firebase_admin import credentials, firestore, auth
 import os
 import json
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 import logging
 from dotenv import load_dotenv
+from werkzeug.utils import secure_filename
+import uuid
+import mimetypes
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+    print("Warning: PIL/Pillow not available. Image thumbnails will be disabled.")
 
 # Load environment variables
 load_dotenv()
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
+
+# File upload configuration
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size
+
+# Allowed file extensions
+ALLOWED_EXTENSIONS = {
+    'images': {'png', 'jpg', 'jpeg', 'gif', 'webp'},
+    'apks': {'apk'},
+    'profile': {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+}
+
+def allowed_file(filename, file_type):
+    """Check if file extension is allowed for the given file type"""
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS.get(file_type, set())
+
+def generate_unique_filename(filename):
+    """Generate a unique filename while preserving the extension"""
+    name, ext = os.path.splitext(secure_filename(filename))
+    unique_name = f"{uuid.uuid4().hex}_{name}{ext}"
+    return unique_name
 
 # Configure CORS - only allow specific origins
 allowed_origins = os.getenv('ALLOWED_ORIGINS', '').split(',')
@@ -119,7 +151,7 @@ def get_external_ip():
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
-    return jsonify({'status': 'ok', 'timestamp': datetime.utcnow().isoformat()})
+    return jsonify({'status': 'ok', 'timestamp': datetime.now(timezone.utc).isoformat()})
 
 @app.before_request
 def handle_preflight():
@@ -711,6 +743,197 @@ def delete_user_data():
     except Exception as e:
         logger.error(f"Error deleting user data: {e}")
         return jsonify({'error': 'Failed to delete user data'}), 500
+
+@app.route('/api/upload-file', methods=['POST'])
+@limiter.limit("10/minute")
+@require_auth_strict
+def upload_file():
+    """Upload a file (image, APK, or profile picture)"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+        
+        file = request.files['file']
+        file_type = request.form.get('type', 'images')  # images, apks, profile
+        
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        if not allowed_file(file.filename, file_type):
+            return jsonify({'error': f'File type not allowed for {file_type}'}), 400
+        
+        # Generate unique filename
+        filename = generate_unique_filename(file.filename)
+        
+        # Create file path
+        file_dir = os.path.join(app.config['UPLOAD_FOLDER'], file_type)
+        os.makedirs(file_dir, exist_ok=True)
+        file_path = os.path.join(file_dir, filename)
+        
+        # Save file
+        file.save(file_path)
+        
+        # If it's an image, create a thumbnail
+        if file_type in ['images', 'profile'] and PIL_AVAILABLE:
+            try:
+                with Image.open(file_path) as img:
+                    # Create thumbnail
+                    img.thumbnail((300, 300), Image.Resampling.LANCZOS)
+                    thumb_filename = f"thumb_{filename}"
+                    thumb_path = os.path.join(file_dir, thumb_filename)
+                    img.save(thumb_path, optimize=True, quality=85)
+                    
+                    return jsonify({
+                        'success': True,
+                        'filename': filename,
+                        'url': f"/api/files/{file_type}/{filename}",
+                        'thumbnail': f"/api/files/{file_type}/thumb_{filename}",
+                        'type': file_type
+                    })
+            except Exception as e:
+                logger.error(f"Error creating thumbnail: {e}")
+                # Continue without thumbnail if image processing fails
+        
+        return jsonify({
+            'success': True,
+            'filename': filename,
+            'url': f"/api/files/{file_type}/{filename}",
+            'type': file_type
+        })
+        
+    except Exception as e:
+        logger.error(f"Error uploading file: {e}")
+        return jsonify({'error': 'Failed to upload file'}), 500
+
+@app.route('/api/files/<file_type>/<filename>')
+@limiter.limit("200/minute")
+def serve_file(file_type, filename):
+    """Serve uploaded files"""
+    try:
+        if file_type not in ALLOWED_EXTENSIONS:
+            return jsonify({'error': 'Invalid file type'}), 400
+        
+        file_dir = os.path.join(app.config['UPLOAD_FOLDER'], file_type)
+        
+        # Security check - ensure filename is secure
+        safe_filename = secure_filename(filename)
+        if safe_filename != filename:
+            return jsonify({'error': 'Invalid filename'}), 400
+        
+        file_path = os.path.join(file_dir, filename)
+        if not os.path.exists(file_path):
+            return jsonify({'error': 'File not found'}), 404
+        
+        # Get mimetype
+        mimetype = mimetypes.guess_type(file_path)[0]
+        
+        return send_from_directory(file_dir, filename, mimetype=mimetype)
+        
+    except Exception as e:
+        logger.error(f"Error serving file: {e}")
+        return jsonify({'error': 'Failed to serve file'}), 500
+
+@app.route('/api/delete-file', methods=['DELETE'])
+@limiter.limit("30/minute")
+@require_auth_strict
+def delete_file():
+    """Delete an uploaded file"""
+    try:
+        data = request.get_json()
+        filename = data.get('filename')
+        file_type = data.get('type')
+        
+        if not filename or not file_type:
+            return jsonify({'error': 'Missing filename or type'}), 400
+        
+        if file_type not in ALLOWED_EXTENSIONS:
+            return jsonify({'error': 'Invalid file type'}), 400
+        
+        # Security check
+        safe_filename = secure_filename(filename)
+        if safe_filename != filename:
+            return jsonify({'error': 'Invalid filename'}), 400
+        
+        file_dir = os.path.join(app.config['UPLOAD_FOLDER'], file_type)
+        file_path = os.path.join(file_dir, filename)
+        
+        # Delete main file
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        
+        # Delete thumbnail if it exists
+        thumb_filename = f"thumb_{filename}"
+        thumb_path = os.path.join(file_dir, thumb_filename)
+        if os.path.exists(thumb_path):
+            os.remove(thumb_path)
+        
+        return jsonify({'success': True, 'message': 'File deleted successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error deleting file: {e}")
+        return jsonify({'error': 'Failed to delete file'}), 500
+
+@app.route('/api/test-upload-file', methods=['POST'])
+@limiter.limit("10/minute")
+def test_upload_file():
+    """Test file upload without authentication (TEMPORARY - FOR TESTING ONLY)"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+        
+        file = request.files['file']
+        file_type = request.form.get('type', 'images')  # images, apks, profile
+        
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        if not allowed_file(file.filename, file_type):
+            return jsonify({'error': f'File type not allowed for {file_type}'}), 400
+        
+        # Generate unique filename
+        filename = generate_unique_filename(file.filename)
+        
+        # Create file path
+        file_dir = os.path.join(app.config['UPLOAD_FOLDER'], file_type)
+        os.makedirs(file_dir, exist_ok=True)
+        file_path = os.path.join(file_dir, filename)
+        
+        # Save file
+        file.save(file_path)
+        
+        # If it's an image, create a thumbnail
+        if file_type in ['images', 'profile'] and PIL_AVAILABLE:
+            try:
+                with Image.open(file_path) as img:
+                    # Create thumbnail
+                    img.thumbnail((300, 300), Image.Resampling.LANCZOS)
+                    thumb_filename = f"thumb_{filename}"
+                    thumb_path = os.path.join(file_dir, thumb_filename)
+                    img.save(thumb_path, optimize=True, quality=85)
+                    
+                    return jsonify({
+                        'success': True,
+                        'filename': filename,
+                        'url': f"/api/files/{file_type}/{filename}",
+                        'thumbnail': f"/api/files/{file_type}/thumb_{filename}",
+                        'type': file_type,
+                        'message': 'TEST UPLOAD - Authentication bypassed'
+                    })
+            except Exception as e:
+                logger.error(f"Error creating thumbnail: {e}")
+                # Continue without thumbnail if image processing fails
+        
+        return jsonify({
+            'success': True,
+            'filename': filename,
+            'url': f"/api/files/{file_type}/{filename}",
+            'type': file_type,
+            'message': 'TEST UPLOAD - Authentication bypassed'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error uploading file: {e}")
+        return jsonify({'error': 'Failed to upload file'}), 500
 
 @app.errorhandler(429)
 def ratelimit_handler(e):

@@ -5,6 +5,7 @@ import { User, Mail, Lock, Settings as SettingsIcon, Save, Eye, EyeOff, AlertCir
 import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import apiClient from '../utils/apiClient';
+import FileUpload from '../components/FileUpload';
 
 const Settings = () => {
   const { currentUser, userProfile, logout } = useAuth();
@@ -35,6 +36,8 @@ const Settings = () => {
   const [activeTab, setActiveTab] = useState('profile');
   const [deletePassword, setDeletePassword] = useState('');
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [uploadedProfilePicture, setUploadedProfilePicture] = useState(null);
+  const [uploadedBannerImage, setUploadedBannerImage] = useState(null);
 
   useEffect(() => {
     if (currentUser && userProfile) {
@@ -95,6 +98,42 @@ const Settings = () => {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleProfilePictureUpload = (uploadedFile, removedFile) => {
+    if (uploadedFile) {
+      // Profile picture was uploaded
+      setUploadedProfilePicture(uploadedFile);
+      setProfileData(prev => ({
+        ...prev,
+        profilePicture: `http://127.0.0.1:5000${uploadedFile.url}`
+      }));
+    } else if (removedFile) {
+      // Profile picture was removed
+      setUploadedProfilePicture(null);
+      setProfileData(prev => ({
+        ...prev,
+        profilePicture: ''
+      }));
+    }
+  };
+
+  const handleBannerImageUpload = (uploadedFile, removedFile) => {
+    if (uploadedFile) {
+      // Banner image was uploaded
+      setUploadedBannerImage(uploadedFile);
+      setProfileData(prev => ({
+        ...prev,
+        bannerImage: `http://127.0.0.1:5000${uploadedFile.url}`
+      }));
+    } else if (removedFile) {
+      // Banner image was removed
+      setUploadedBannerImage(null);
+      setProfileData(prev => ({
+        ...prev,
+        bannerImage: ''
+      }));
     }
   };
 
@@ -276,9 +315,9 @@ const Settings = () => {
                     <label className="block text-sm font-medium text-nothing-gray-300 mb-2">
                       Banner Image
                     </label>
-                    <div className="relative">
+                    <div className="space-y-4">
                       {/* Banner Preview */}
-                      <div className="w-full h-32 bg-nothing-gray-800 rounded-lg border border-nothing-gray-700 overflow-hidden mb-3">
+                      <div className="w-full h-32 bg-nothing-gray-800 rounded-lg border border-nothing-gray-700 overflow-hidden">
                         {profileData.bannerImage ? (
                           <img
                             src={profileData.bannerImage}
@@ -291,16 +330,36 @@ const Settings = () => {
                           </div>
                         )}
                       </div>
-                      {/* Banner URL Input */}
+                      
+                      {/* File Upload Component */}
+                      <div className="bg-nothing-gray-800 rounded-lg p-4">
+                        <FileUpload
+                          onFileUpload={handleBannerImageUpload}
+                          acceptedTypes="profile"
+                          multiple={false}
+                        />
+                      </div>
+
+                      {/* URL Input Alternative */}
+                      <div className="text-center text-nothing-gray-400">
+                        <span className="px-3 py-1 bg-nothing-gray-800 rounded">OR</span>
+                      </div>
+                      
                       <div className="relative">
                         <ImageIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-nothing-gray-500" />
                         <input
                           type="url"
-                          value={profileData.bannerImage}
+                          value={uploadedBannerImage ? profileData.bannerImage : profileData.bannerImage}
                           onChange={(e) => setProfileData(prev => ({ ...prev, bannerImage: e.target.value }))}
                           className="w-full pl-10 pr-4 py-3 bg-nothing-gray-800 border border-nothing-gray-700 rounded-lg text-nothing-white placeholder-nothing-gray-500 focus:outline-none focus:ring-2 focus:ring-nothing-red focus:border-transparent"
                           placeholder="https://example.com/banner-image.jpg"
+                          disabled={!!uploadedBannerImage}
                         />
+                        {uploadedBannerImage && (
+                          <p className="text-sm text-nothing-gray-400 mt-2">
+                            Banner image uploaded
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -310,31 +369,57 @@ const Settings = () => {
                     <label className="block text-sm font-medium text-nothing-gray-300 mb-2">
                       Profile Picture
                     </label>
-                    <div className="flex items-center space-x-4">
+                    <div className="space-y-4">
                       {/* Profile Picture Preview */}
-                      <div className="w-20 h-20 bg-nothing-gray-800 rounded-full border border-nothing-gray-700 overflow-hidden flex-shrink-0">
-                        {profileData.profilePicture ? (
-                          <img
-                            src={profileData.profilePicture}
-                            alt="Profile preview"
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <User className="h-8 w-8 text-nothing-gray-600" />
-                          </div>
-                        )}
+                      <div className="flex items-center space-x-4">
+                        <div className="w-20 h-20 bg-nothing-gray-800 rounded-full border border-nothing-gray-700 overflow-hidden flex-shrink-0">
+                          {profileData.profilePicture ? (
+                            <img
+                              src={profileData.profilePicture}
+                              alt="Profile preview"
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <User className="h-8 w-8 text-nothing-gray-600" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm text-nothing-gray-300">Upload a new profile picture</p>
+                          <p className="text-xs text-nothing-gray-500">Recommended: 400x400px or larger</p>
+                        </div>
                       </div>
-                      {/* Profile Picture URL Input */}
-                      <div className="flex-1 relative">
+                      
+                      {/* File Upload Component */}
+                      <div className="bg-nothing-gray-800 rounded-lg p-4">
+                        <FileUpload
+                          onFileUpload={handleProfilePictureUpload}
+                          acceptedTypes="profile"
+                          multiple={false}
+                        />
+                      </div>
+
+                      {/* URL Input Alternative */}
+                      <div className="text-center text-nothing-gray-400">
+                        <span className="px-3 py-1 bg-nothing-gray-800 rounded">OR</span>
+                      </div>
+                      
+                      <div className="relative">
                         <Camera className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-nothing-gray-500" />
                         <input
                           type="url"
-                          value={profileData.profilePicture}
+                          value={uploadedProfilePicture ? profileData.profilePicture : profileData.profilePicture}
                           onChange={(e) => setProfileData(prev => ({ ...prev, profilePicture: e.target.value }))}
                           className="w-full pl-10 pr-4 py-3 bg-nothing-gray-800 border border-nothing-gray-700 rounded-lg text-nothing-white placeholder-nothing-gray-500 focus:outline-none focus:ring-2 focus:ring-nothing-red focus:border-transparent"
                           placeholder="https://example.com/profile-picture.jpg"
+                          disabled={!!uploadedProfilePicture}
                         />
+                        {uploadedProfilePicture && (
+                          <p className="text-sm text-nothing-gray-400 mt-2">
+                            Profile picture uploaded
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>

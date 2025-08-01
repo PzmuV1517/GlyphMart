@@ -6,6 +6,7 @@ import { Download, Eye, Heart, Share2, AlertTriangle, Github, ExternalLink, Cale
 import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import apiClient from '../utils/apiClient';
+import FileUpload from '../components/FileUpload';
 
 const GlyphDetail = () => {
   const { id } = useParams();
@@ -23,6 +24,7 @@ const GlyphDetail = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [showFullDescription, setShowFullDescription] = useState(false);
+  const [uploadedEditImages, setUploadedEditImages] = useState([]);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -181,6 +183,24 @@ const GlyphDetail = () => {
     const { name, value } = e.target;
     setEditData(prev => ({ ...prev, [name]: value }));
     setEditError('');
+  };
+
+  const handleEditImageUpload = (uploadedFile, removedFile) => {
+    if (uploadedFile) {
+      // Image was uploaded
+      setUploadedEditImages(prev => [...prev, uploadedFile]);
+      setEditData(prev => ({
+        ...prev,
+        images: [...prev.images, `http://127.0.0.1:5000${uploadedFile.url}`]
+      }));
+    } else if (removedFile) {
+      // Image was removed
+      setUploadedEditImages(prev => prev.filter(f => f.id !== removedFile.id));
+      setEditData(prev => ({
+        ...prev,
+        images: prev.images.filter(url => url !== `http://127.0.0.1:5000${removedFile.url}`)
+      }));
+    }
   };
 
   const handleEditSubmit = async (e) => {
@@ -596,15 +616,47 @@ const GlyphDetail = () => {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-nothing-gray-300 mb-2">Image URLs (comma separated)</label>
-                <input
-                  type="text"
-                  name="images"
-                  value={editData.images.join(', ')}
-                  onChange={e => setEditData(prev => ({ ...prev, images: e.target.value.split(',').map(s => s.trim()) }))
-                  }
-                  className="w-full px-4 py-3 bg-nothing-gray-800 border border-nothing-gray-700 rounded-lg text-nothing-white"
-                />
+                <label className="block text-sm font-medium text-nothing-gray-300 mb-2">Images</label>
+                <div className="space-y-4">
+                  {/* Current Images Preview */}
+                  {editData.images && editData.images.length > 0 && (
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                      {editData.images.map((imageUrl, index) => (
+                        <div key={index} className="relative">
+                          <img
+                            src={imageUrl}
+                            alt={`Preview ${index + 1}`}
+                            className="w-full h-24 object-cover rounded-lg"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {/* File Upload Component */}
+                  <div className="bg-nothing-gray-800 rounded-lg p-4">
+                    <FileUpload
+                      onFileUpload={handleEditImageUpload}
+                      acceptedTypes="images"
+                      multiple={true}
+                      maxFiles={5}
+                    />
+                  </div>
+
+                  {/* URL Input Alternative */}
+                  <div className="text-center text-nothing-gray-400">
+                    <span className="px-3 py-1 bg-nothing-gray-800 rounded">OR</span>
+                  </div>
+                  
+                  <input
+                    type="text"
+                    name="images"
+                    value={editData.images.join(', ')}
+                    onChange={e => setEditData(prev => ({ ...prev, images: e.target.value.split(',').map(s => s.trim()) }))}
+                    className="w-full px-4 py-3 bg-nothing-gray-800 border border-nothing-gray-700 rounded-lg text-nothing-white"
+                    placeholder="Or enter image URLs separated by commas"
+                  />
+                </div>
               </div>
               {editError && (
                 <div className="bg-red-900/20 border border-red-700 text-red-400 px-4 py-2 rounded-lg mb-4">{editError}</div>

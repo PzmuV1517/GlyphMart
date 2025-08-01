@@ -92,6 +92,41 @@ class APIClient {
     return response;
   }
 
+  // File upload methods
+  async uploadFile(file, type = 'images') {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('type', type);
+
+    const token = await this.getAuthToken();
+    const response = await fetch(`${this.baseURL}/api/upload-file`, {
+      method: 'POST',
+      headers: {
+        'Authorization': token ? `Bearer ${token}` : '',
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to upload file');
+    }
+
+    return await response.json();
+  }
+
+  async deleteFile(filename, type) {
+    const response = await this.request('/delete-file', {
+      method: 'DELETE',
+      body: JSON.stringify({ filename, type }),
+    });
+    return response;
+  }
+
+  getFileUrl(type, filename) {
+    return `${this.baseURL}/api/files/${type}/${filename}`;
+  }
+
   // View and download tracking
   async recordView(glyphId) {
     try {
