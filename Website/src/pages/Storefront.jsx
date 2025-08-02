@@ -146,7 +146,7 @@ const Storefront = () => {
               </div>
             </div>
             <span className="text-xs">
-              {glyph.createdAt?.toDate?.()?.toLocaleDateString() || 'Unknown'}
+              {glyph.createdAt ? new Date(glyph.createdAt).toLocaleDateString() : 'Unknown'}
             </span>
           </div>
         </div>
@@ -262,7 +262,7 @@ const Storefront = () => {
               <div className="flex items-center space-x-1">
                 <Calendar className="h-4 w-4" />
                 <span>
-                  Joined {user.createdAt?.toDate?.()?.toLocaleDateString() || 'Unknown'}
+                  Joined {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'Unknown'}
                 </span>
               </div>
             </div>

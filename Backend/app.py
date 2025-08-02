@@ -618,6 +618,10 @@ def get_user(user_id):
         user_data = doc.to_dict()
         user_data['uid'] = doc.id
         
+        # Convert timestamp to ISO string for consistency
+        if 'createdAt' in user_data and user_data['createdAt']:
+            user_data['createdAt'] = user_data['createdAt'].isoformat()
+        
         return jsonify({'user': user_data})
         
     except Exception as e:
@@ -650,6 +654,10 @@ def get_user_by_username(username):
         
         user_data = user_doc.to_dict()
         user_data['uid'] = user_doc.id
+        
+        # Convert timestamp to ISO string for consistency
+        if 'createdAt' in user_data and user_data['createdAt']:
+            user_data['createdAt'] = user_data['createdAt'].isoformat()
         
         return jsonify({'user': user_data})
         
