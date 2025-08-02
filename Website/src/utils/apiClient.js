@@ -295,6 +295,38 @@ class APIClient {
     });
     return response;
   }
+
+  // Glyph Requests
+  async getGlyphRequests(params = {}) {
+    const queryParams = new URLSearchParams(params);
+    return this.request(`/glyph-requests?${queryParams}`);
+  }
+
+  async createGlyphRequest(requestData) {
+    return this.request('/glyph-requests', {
+      method: 'POST',
+      body: JSON.stringify(requestData),
+    });
+  }
+
+  async getGlyphRequest(requestId) {
+    return this.request(`/glyph-requests/${requestId}`);
+  }
+
+  async takeOnGlyphRequest(requestId) {
+    return this.request(`/glyph-requests/${requestId}/take-on`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async completeGlyphRequest(requestId, glyphId = null) {
+    const data = glyphId ? { glyph_id: glyphId } : {};
+    return this.request(`/glyph-requests/${requestId}/complete`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
 }
 
 export const apiClient = new APIClient();

@@ -1424,7 +1424,7 @@ def take_on_glyph_request(request_id):
         user_id = request.user['uid']  # Get from authenticated token
         
         # Check if user has at least 1 glyph
-        user_glyphs = db.collection('glyphs').where('user_id', '==', user_id).limit(1).get()
+        user_glyphs = db.collection('glyphs').where('creatorId', '==', user_id).limit(1).get()
         if not list(user_glyphs):
             return jsonify({'error': 'You must have at least 1 uploaded glyph to take on requests'}), 403
         
@@ -1477,7 +1477,7 @@ def complete_glyph_request(request_id):
         # Verify the glyph exists and belongs to the user
         if glyph_id:
             glyph_doc = db.collection('glyphs').document(glyph_id).get()
-            if not glyph_doc.exists or glyph_doc.to_dict().get('user_id') != user_id:
+            if not glyph_doc.exists or glyph_doc.to_dict().get('creatorId') != user_id:
                 return jsonify({'error': 'Invalid glyph provided'}), 400
         
         # Update the request

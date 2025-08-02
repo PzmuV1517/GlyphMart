@@ -29,24 +29,19 @@ const RequestGlyphs = () => {
     try {
       setLoading(true);
       const params = {
-        limit: 20,
-        offset: 0
+        limit: '20',
+        offset: '0'
       };
       
       if (searchQuery.trim()) {
         params.search = searchQuery.trim();
       }
 
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/glyph-requests?${new URLSearchParams(params)}`);
-      const data = await response.json();
-      
-      if (response.ok) {
-        setRequests(data.requests || []);
-      } else {
-        console.error('Error fetching requests:', data.error);
-      }
+      const data = await apiClient.getGlyphRequests(params);
+      setRequests(data.requests || []);
     } catch (error) {
       console.error('Error fetching requests:', error);
+      setRequests([]);
     } finally {
       setLoading(false);
     }
@@ -69,32 +64,20 @@ const RequestGlyphs = () => {
         reference_files: formData.referenceFiles
       };
 
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/glyph-requests`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${await currentUser.getIdToken()}`
-        },
-        body: JSON.stringify(requestData)
-      });
+      await apiClient.createGlyphRequest(requestData);
 
-      if (response.ok) {
-        setShowCreateForm(false);
-        setFormData({
-          title: '',
-          description: '',
-          tags: '',
-          referenceImages: [],
-          referenceFiles: []
-        });
-        fetchRequests(); // Refresh the list
-      } else {
-        const error = await response.json();
-        alert(error.error || 'Failed to create request');
-      }
+      setShowCreateForm(false);
+      setFormData({
+        title: '',
+        description: '',
+        tags: '',
+        referenceImages: [],
+        referenceFiles: []
+      });
+      fetchRequests(); // Refresh the list
     } catch (error) {
       console.error('Error creating request:', error);
-      alert('Failed to create request');
+      alert(error.message || 'Failed to create request');
     }
   };
 
@@ -105,25 +88,12 @@ const RequestGlyphs = () => {
     }
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/glyph-requests/${requestId}/take-on`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${await currentUser.getIdToken()}`
-        },
-        body: JSON.stringify({})
-      });
-
-      if (response.ok) {
-        alert('Successfully took on the request!');
-        fetchRequests(); // Refresh the list
-      } else {
-        const error = await response.json();
-        alert(error.error || 'Failed to take on request');
-      }
+      await apiClient.takeOnGlyphRequest(requestId);
+      alert('Successfully took on the request!');
+      fetchRequests(); // Refresh the list
     } catch (error) {
       console.error('Error taking on request:', error);
-      alert('Failed to take on request');
+      alert(error.message || 'Failed to take on request');
     }
   };
 
