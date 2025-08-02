@@ -1546,70 +1546,75 @@ def get_my_glyph_requests():
         user_id = request.user['uid']
         request_type = request.args.get('type', 'all')  # all, created, assigned
         
+        all_requests = []
+        
         # Get requests created by user
-        created_requests = []
         if request_type in ['all', 'created']:
-            created_docs = db.collection('glyph_requests').where('user_id', '==', user_id).order_by('created_at', direction=firestore.Query.DESCENDING).stream()
-            for doc in created_docs:
-                data = doc.to_dict()
-                data['id'] = doc.id
-                data['type'] = 'created'
-                
-                # Convert timestamp to ISO string
-                if 'created_at' in data and data['created_at']:
-                    data['created_at'] = data['created_at'].isoformat()
-                if 'updated_at' in data and data['updated_at']:
-                    data['updated_at'] = data['updated_at'].isoformat()
-                
-                # Get assigned user info if assigned
-                if data.get('assigned_to'):
-                    try:
-                        assigned_user_doc = db.collection('users').document(data['assigned_to']).get()
-                        if assigned_user_doc.exists:
-                            assigned_user_data = assigned_user_doc.to_dict()
-                            data['assigned_user'] = {
-                                'username': assigned_user_data.get('username', 'Unknown'),
-                                'profilePicture': assigned_user_data.get('profilePicture')
-                            }
-                    except Exception:
-                        pass
-                
-                created_requests.append(data)
+            try:
+                created_docs = db.collection('glyph_requests').where('user_id', '==', user_id).stream()
+                for doc in created_docs:
+                    data = doc.to_dict()
+                    data['id'] = doc.id
+                    data['type'] = 'created'
+                    
+                    # Convert timestamp to ISO string
+                    if 'created_at' in data and data['created_at']:
+                        data['created_at'] = data['created_at'].isoformat()
+                    if 'updated_at' in data and data['updated_at']:
+                        data['updated_at'] = data['updated_at'].isoformat()
+                    
+                    # Get assigned user info if assigned
+                    if data.get('assigned_to'):
+                        try:
+                            assigned_user_doc = db.collection('users').document(data['assigned_to']).get()
+                            if assigned_user_doc.exists:
+                                assigned_user_data = assigned_user_doc.to_dict()
+                                data['assigned_user'] = {
+                                    'username': assigned_user_data.get('username', 'Unknown'),
+                                    'profilePicture': assigned_user_data.get('profilePicture')
+                                }
+                        except Exception:
+                            pass
+                    
+                    all_requests.append(data)
+            except Exception as e:
+                logger.error(f"Error fetching created requests: {str(e)}")
         
         # Get requests assigned to user
-        assigned_requests = []
         if request_type in ['all', 'assigned']:
-            assigned_docs = db.collection('glyph_requests').where('assigned_to', '==', user_id).order_by('created_at', direction=firestore.Query.DESCENDING).stream()
-            for doc in assigned_docs:
-                data = doc.to_dict()
-                data['id'] = doc.id
-                data['type'] = 'assigned'
-                
-                # Convert timestamp to ISO string
-                if 'created_at' in data and data['created_at']:
-                    data['created_at'] = data['created_at'].isoformat()
-                if 'updated_at' in data and data['updated_at']:
-                    data['updated_at'] = data['updated_at'].isoformat()
-                
-                # Get requester info
-                if 'user_id' in data:
-                    try:
-                        user_doc = db.collection('users').document(data['user_id']).get()
-                        if user_doc.exists:
-                            user_data = user_doc.to_dict()
-                            data['user'] = {
-                                'username': user_data.get('username', 'Unknown'),
-                                'profilePicture': user_data.get('profilePicture')
-                            }
-                        else:
+            try:
+                assigned_docs = db.collection('glyph_requests').where('assigned_to', '==', user_id).stream()
+                for doc in assigned_docs:
+                    data = doc.to_dict()
+                    data['id'] = doc.id
+                    data['type'] = 'assigned'
+                    
+                    # Convert timestamp to ISO string
+                    if 'created_at' in data and data['created_at']:
+                        data['created_at'] = data['created_at'].isoformat()
+                    if 'updated_at' in data and data['updated_at']:
+                        data['updated_at'] = data['updated_at'].isoformat()
+                    
+                    # Get requester info
+                    if 'user_id' in data:
+                        try:
+                            user_doc = db.collection('users').document(data['user_id']).get()
+                            if user_doc.exists:
+                                user_data = user_doc.to_dict()
+                                data['user'] = {
+                                    'username': user_data.get('username', 'Unknown'),
+                                    'profilePicture': user_data.get('profilePicture')
+                                }
+                            else:
+                                data['user'] = {'username': 'Unknown'}
+                        except Exception:
                             data['user'] = {'username': 'Unknown'}
-                    except Exception:
-                        data['user'] = {'username': 'Unknown'}
-                
-                assigned_requests.append(data)
+                    
+                    all_requests.append(data)
+            except Exception as e:
+                logger.error(f"Error fetching assigned requests: {str(e)}")
         
-        # Combine and sort by creation date
-        all_requests = created_requests + assigned_requests
+        # Sort by creation date in Python (to avoid Firestore composite index requirements)
         all_requests.sort(key=lambda x: x.get('created_at', ''), reverse=True)
         
         return jsonify({
