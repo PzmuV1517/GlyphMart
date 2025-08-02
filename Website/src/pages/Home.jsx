@@ -66,7 +66,7 @@ const Home = () => {
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Link
-                to="/browse"
+                to="/search"
                 className="bg-nothing-red hover:bg-red-700 text-nothing-white px-8 py-3 rounded-lg font-semibold text-lg transition-colors duration-200"
               >
                 Browse Glyphs
@@ -153,6 +153,45 @@ const Home = () => {
           )}
         </div>
       </section>
+
+      {/* Footer */}
+      <footer className="px-4 sm:px-6 lg:px-8 pb-8">
+        <div className="max-w-7xl mx-auto border-t border-nothing-gray-900 pt-6">
+          <div className="text-center space-y-4">
+            {/* Buy Me A Coffee Section */}
+            <div className="mb-4">
+              <p className="text-nothing-gray-400 text-sm mb-3">
+                Enjoying GlyphMart? Support the development!
+              </p>
+              <a
+                href="https://buymeacoffee.com/PzmuV1517"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center space-x-2 bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors duration-200"
+              >
+                <span>☕</span>
+                <span>Buy me a coffee</span>
+              </a>
+            </div>
+            
+            {/* GlyphTones Link */}
+            <div>
+              <p className="text-nothing-gray-500 text-sm mb-2">
+                Looking for tones instead? Check out{' '}
+                <a
+                  href="https://glyphtones.firu.dev/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-nothing-gray-400 hover:text-nothing-gray-300 underline transition-colors duration-200 font-medium"
+                >
+                  GlyphTones
+                </a>
+                {' '}by Firu - great work!
+              </p>
+            </div>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 };

@@ -533,18 +533,23 @@ def upload_glyph():
 @limiter.limit("10/minute")
 @require_auth_strict
 def update_glyph(glyph_id):
-    """Update an existing glyph (only by creator)"""
+    """Update an existing glyph (only by creator or admin)"""
     try:
         data = request.get_json()
         user_id = request.user['uid']
         
-        # Check if glyph exists and user is creator
+        # Check if glyph exists
         doc = db.collection('glyphs').document(glyph_id).get()
         if not doc.exists:
             return jsonify({'error': 'Glyph not found'}), 404
         
         glyph_data = doc.to_dict()
-        if glyph_data['creatorId'] != user_id:
+        
+        # Check if user is creator or admin
+        is_creator = glyph_data['creatorId'] == user_id
+        is_user_admin = is_admin(user_id)
+        
+        if not is_creator and not is_user_admin:
             return jsonify({'error': 'Not authorized to edit this glyph'}), 403
         
         # Update allowed fields
@@ -567,17 +572,22 @@ def update_glyph(glyph_id):
 @limiter.limit("5/minute")
 @require_auth_strict
 def delete_glyph(glyph_id):
-    """Delete a glyph and all associated data (only by creator)"""
+    """Delete a glyph and all associated data (only by creator or admin)"""
     try:
         user_id = request.user['uid']
         
-        # Check if glyph exists and user is creator
+        # Check if glyph exists
         doc = db.collection('glyphs').document(glyph_id).get()
         if not doc.exists:
             return jsonify({'error': 'Glyph not found'}), 404
         
         glyph_data = doc.to_dict()
-        if glyph_data['creatorId'] != user_id:
+        
+        # Check if user is creator or admin
+        is_creator = glyph_data['creatorId'] == user_id
+        is_user_admin = is_admin(user_id)
+        
+        if not is_creator and not is_user_admin:
             return jsonify({'error': 'Not authorized to delete this glyph'}), 403
         
         # Delete glyph document
@@ -948,6 +958,24 @@ def ratelimit_handler(e):
     return jsonify({'error': 'Rate limit exceeded. Please try again later.'}), 429
 
 # Admin endpoints
+def is_admin(user_id):
+    """Check if a user is an admin (super admin or has admin role)"""
+    try:
+        # Check if user is the super admin
+        if user_id == '9H3pw5zS6GRDFTZaoYspEmruORj2':
+            return True
+        
+        # Check if user has admin role in Firestore
+        user_doc = db.collection('users').document(user_id).get()
+        if user_doc.exists:
+            user_data = user_doc.to_dict()
+            return user_data.get('isAdmin', False)
+        
+        return False
+    except Exception as e:
+        logger.error(f"Error checking admin status: {str(e)}")
+        return False
+
 def require_admin(f):
     """Decorator to require admin privileges"""
     @wraps(f)

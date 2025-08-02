@@ -12,11 +12,13 @@ const Search = () => {
   const [loading, setLoading] = useState(false);
   const [sortBy, setSortBy] = useState('latest');
   const [filterBy, setFilterBy] = useState('all');
+  const [hasSearched, setHasSearched] = useState(false); // Track if search has been performed
 
   useEffect(() => {
     const searchTermRaw = searchParams.get('q');
     if (searchTermRaw) {
       setSearchQuery(searchTermRaw);
+      setHasSearched(true);
       performSearch(searchTermRaw);
     }
   }, [searchParams]);
@@ -24,6 +26,7 @@ const Search = () => {
   const performSearch = async (searchTermRaw, sort = sortBy, filter = filterBy) => {
     if (!searchTermRaw.trim()) return;
     
+    setHasSearched(true);
     setLoading(true);
     try {
       // Use API client to search glyphs
@@ -189,7 +192,7 @@ const Search = () => {
          )}
 
         {/* No Results */}
-        {!loading && searchQuery && results.length === 0 && (
+        {!loading && hasSearched && results.length === 0 && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -212,7 +215,7 @@ const Search = () => {
         )}
 
         {/* Empty State (no search performed) */}
-        {!loading && !searchQuery && (
+        {!loading && !hasSearched && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
