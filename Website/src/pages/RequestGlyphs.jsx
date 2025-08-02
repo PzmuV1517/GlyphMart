@@ -66,8 +66,7 @@ const RequestGlyphs = () => {
         description: formData.description,
         tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag),
         reference_images: formData.referenceImages,
-        reference_files: formData.referenceFiles,
-        user_id: currentUser.uid
+        reference_files: formData.referenceFiles
       };
 
       const response = await fetch(`${import.meta.env.VITE_API_URL}/api/glyph-requests`, {
@@ -112,7 +111,7 @@ const RequestGlyphs = () => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${await currentUser.getIdToken()}`
         },
-        body: JSON.stringify({ user_id: currentUser.uid })
+        body: JSON.stringify({})
       });
 
       if (response.ok) {

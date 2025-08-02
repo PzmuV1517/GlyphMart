@@ -1257,17 +1257,11 @@ def admin_delete_glyph(glyph_id):
 # ============================================
 
 @app.route('/api/glyph-requests', methods=['GET', 'OPTIONS'])
+@limiter.limit("30/minute")
+@verify_token
 def get_glyph_requests():
     """Get all glyph requests with optional search and pagination"""
     try:
-        # Handle CORS preflight
-        if request.method == 'OPTIONS':
-            response = jsonify({'message': 'OK'})
-            response.headers.add('Access-Control-Allow-Origin', '*')
-            response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-            response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
-            return response
-            
         search_query = request.args.get('search', '').strip()
         limit = int(request.args.get('limit', 20))
         offset = int(request.args.get('offset', 0))
@@ -1325,12 +1319,14 @@ def get_glyph_requests():
         return jsonify({'error': 'Failed to fetch glyph requests'}), 500
 
 @app.route('/api/glyph-requests', methods=['POST'])
+@limiter.limit("5/minute")
+@verify_token
 @require_auth
 def create_glyph_request():
     """Create a new glyph request"""
     try:
         data = request.get_json()
-        user_id = data.get('user_id')
+        user_id = request.user['uid']  # Get from authenticated token
         
         # Validate required fields
         if not data.get('title') or not data.get('description'):
@@ -1364,17 +1360,11 @@ def create_glyph_request():
         return jsonify({'error': 'Failed to create glyph request'}), 500
 
 @app.route('/api/glyph-requests/<request_id>', methods=['GET', 'OPTIONS'])
+@limiter.limit("30/minute")
+@verify_token
 def get_glyph_request(request_id):
     """Get a specific glyph request by ID"""
     try:
-        # Handle CORS preflight
-        if request.method == 'OPTIONS':
-            response = jsonify({'message': 'OK'})
-            response.headers.add('Access-Control-Allow-Origin', '*')
-            response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-            response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
-            return response
-            
         doc = db.collection('glyph_requests').document(request_id).get()
         
         if not doc.exists:
@@ -1424,12 +1414,14 @@ def get_glyph_request(request_id):
         return jsonify({'error': 'Failed to fetch glyph request'}), 500
 
 @app.route('/api/glyph-requests/<request_id>/take-on', methods=['POST'])
+@limiter.limit("10/minute")
+@verify_token
 @require_auth
 def take_on_glyph_request(request_id):
     """Allow a user with 1+ glyphs to take on a glyph request"""
     try:
         data = request.get_json()
-        user_id = data.get('user_id')
+        user_id = request.user['uid']  # Get from authenticated token
         
         # Check if user has at least 1 glyph
         user_glyphs = db.collection('glyphs').where('user_id', '==', user_id).limit(1).get()
@@ -1461,12 +1453,14 @@ def take_on_glyph_request(request_id):
         return jsonify({'error': 'Failed to take on glyph request'}), 500
 
 @app.route('/api/glyph-requests/<request_id>/complete', methods=['POST'])
+@limiter.limit("10/minute")
+@verify_token
 @require_auth
 def complete_glyph_request(request_id):
     """Mark a glyph request as completed (for assigned user)"""
     try:
         data = request.get_json()
-        user_id = data.get('user_id')
+        user_id = request.user['uid']  # Get from authenticated token
         glyph_id = data.get('glyph_id')  # The ID of the glyph that fulfills the request
         
         # Get the request
