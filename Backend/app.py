@@ -181,41 +181,19 @@ def get_glyphs():
         # Build Firestore query
         glyphs_ref = db.collection('glyphs')
         
-        # If filtering by creator_id, we need to handle sorting differently
-        # to avoid requiring composite indexes
+        # Use composite indexes for creator filtering with sorting
         if creator_id:
-            # For creator filtering, get all their glyphs and sort in Python
             glyphs_ref = glyphs_ref.where('creatorId', '==', creator_id)
-            docs = glyphs_ref.stream()
-            glyphs = []
             
-            for doc in docs:
-                glyph_data = doc.to_dict()
-                glyph_data['id'] = doc.id
-                
-                # Convert timestamp to ISO string
-                if 'createdAt' in glyph_data and glyph_data['createdAt']:
-                    glyph_data['createdAt'] = glyph_data['createdAt'].isoformat()
-                
-                # Get accurate view count from glyphViews collection
-                views_count = db.collection('glyphViews').where('glyphId', '==', doc.id).stream()
-                glyph_data['views'] = len(list(views_count))
-                
-                glyphs.append(glyph_data)
-            
-            # Sort in Python
+            # Apply sorting with composite indexes
             if sort_by == 'popular':
-                glyphs.sort(key=lambda x: x.get('downloads', 0), reverse=True)
+                glyphs_ref = glyphs_ref.order_by('downloads', direction=firestore.Query.DESCENDING)
             elif sort_by == 'liked':
-                glyphs.sort(key=lambda x: x.get('likes', 0), reverse=True)
+                glyphs_ref = glyphs_ref.order_by('likes', direction=firestore.Query.DESCENDING)
             elif sort_by == 'viewed':
-                glyphs.sort(key=lambda x: x.get('views', 0), reverse=True)
+                glyphs_ref = glyphs_ref.order_by('views', direction=firestore.Query.DESCENDING)
             else:  # latest
-                glyphs.sort(key=lambda x: x.get('createdAt', ''), reverse=True)
-            
-            # Apply limit after sorting
-            glyphs = glyphs[:limit_count]
-            
+                glyphs_ref = glyphs_ref.order_by('createdAt', direction=firestore.Query.DESCENDING)
         else:
             # For non-creator queries, use Firestore sorting
             if sort_by == 'popular':
@@ -226,26 +204,28 @@ def get_glyphs():
                 glyphs_ref = glyphs_ref.order_by('views', direction=firestore.Query.DESCENDING)
             else:  # latest
                 glyphs_ref = glyphs_ref.order_by('createdAt', direction=firestore.Query.DESCENDING)
+        
+        glyphs_ref = glyphs_ref.limit(limit_count)
+        
+        # Execute query
+        docs = glyphs_ref.stream()
+        glyphs = []
+        
+        for doc in docs:
+            glyph_data = doc.to_dict()
+            glyph_data['id'] = doc.id
             
-            glyphs_ref = glyphs_ref.limit(limit_count)
+            # Convert timestamp to ISO string
+            if 'createdAt' in glyph_data and glyph_data['createdAt']:
+                glyph_data['createdAt'] = glyph_data['createdAt'].isoformat()
             
-            # Execute query
-            docs = glyphs_ref.stream()
-            glyphs = []
+            # Use denormalized data - no additional queries needed
+            # views, likes, downloads are already stored in the glyph document
+            glyph_data['views'] = glyph_data.get('views', 0)
+            glyph_data['likes'] = glyph_data.get('likes', 0)
+            glyph_data['downloads'] = glyph_data.get('downloads', 0)
             
-            for doc in docs:
-                glyph_data = doc.to_dict()
-                glyph_data['id'] = doc.id
-                
-                # Convert timestamp to ISO string
-                if 'createdAt' in glyph_data and glyph_data['createdAt']:
-                    glyph_data['createdAt'] = glyph_data['createdAt'].isoformat()
-                
-                # Get accurate view count from glyphViews collection
-                views_count = db.collection('glyphViews').where('glyphId', '==', doc.id).stream()
-                glyph_data['views'] = len(list(views_count))
-                
-                glyphs.append(glyph_data)
+            glyphs.append(glyph_data)
         
         # Apply client-side search filtering if provided
         if search_query:
@@ -279,13 +259,10 @@ def get_glyph(glyph_id):
         if 'createdAt' in glyph_data and glyph_data['createdAt']:
             glyph_data['createdAt'] = glyph_data['createdAt'].isoformat()
         
-        # Get accurate view count from glyphViews collection
-        views_count = db.collection('glyphViews').where('glyphId', '==', glyph_id).stream()
-        glyph_data['views'] = len(list(views_count))
-        
-        # Get accurate like count from likes collection
-        likes_count = db.collection('likes').where('glyphId', '==', glyph_id).stream()
-        glyph_data['likes'] = len(list(likes_count))
+        # Use denormalized data - no additional queries needed
+        glyph_data['views'] = glyph_data.get('views', 0)
+        glyph_data['likes'] = glyph_data.get('likes', 0)
+        glyph_data['downloads'] = glyph_data.get('downloads', 0)
         
         return jsonify({'glyph': glyph_data})
         
@@ -305,25 +282,34 @@ def record_view():
         if not glyph_id:
             return jsonify({'error': 'Missing glyphId'}), 400
         
-        # Get IP address
-        user_ip = get_external_ip()
+        # Use client IP from request headers instead of external lookup
+        user_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR', 'unknown'))
+        if ',' in user_ip:
+            user_ip = user_ip.split(',')[0].strip()
+        
         view_id = f"{glyph_id}_{user_ip}"
         
         # Check if already viewed
         existing_view = db.collection('glyphViews').document(view_id).get()
         
         if not existing_view.exists:
+            # Use batch write for atomic operation
+            batch = db.batch()
+            
             # Record the view
-            db.collection('glyphViews').document(view_id).set({
+            view_ref = db.collection('glyphViews').document(view_id)
+            batch.set(view_ref, {
                 'glyphId': glyph_id,
                 'userIP': user_ip,
                 'viewedAt': firestore.SERVER_TIMESTAMP
             })
             
-            # Increment view count on glyph
-            db.collection('glyphs').document(glyph_id).update({
-                'views': firestore.Increment(1)
-            })
+            # Increment denormalized view count on glyph
+            glyph_ref = db.collection('glyphs').document(glyph_id)
+            batch.update(glyph_ref, {'views': firestore.Increment(1)})
+            
+            # Commit batch
+            batch.commit()
             
             return jsonify({'recorded': True})
         
@@ -345,25 +331,34 @@ def record_download():
         if not glyph_id:
             return jsonify({'error': 'Missing glyphId'}), 400
         
-        # Get IP address
-        user_ip = get_external_ip()
+        # Use client IP from request headers instead of external lookup
+        user_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR', 'unknown'))
+        if ',' in user_ip:
+            user_ip = user_ip.split(',')[0].strip()
+        
         download_id = f"{glyph_id}_{user_ip}"
         
         # Check if already downloaded
         existing_download = db.collection('glyphDownloads').document(download_id).get()
         
         if not existing_download.exists:
+            # Use batch write for atomic operation
+            batch = db.batch()
+            
             # Record the download
-            db.collection('glyphDownloads').document(download_id).set({
+            download_ref = db.collection('glyphDownloads').document(download_id)
+            batch.set(download_ref, {
                 'glyphId': glyph_id,
                 'userIP': user_ip,
                 'downloadedAt': firestore.SERVER_TIMESTAMP
             })
             
-            # Increment download count on glyph
-            db.collection('glyphs').document(glyph_id).update({
-                'downloads': firestore.Increment(1)
-            })
+            # Increment denormalized download count on glyph
+            glyph_ref = db.collection('glyphs').document(glyph_id)
+            batch.update(glyph_ref, {'downloads': firestore.Increment(1)})
+            
+            # Commit batch
+            batch.commit()
             
             return jsonify({'recorded': True})
         
@@ -391,28 +386,40 @@ def toggle_like():
         # Check if already liked
         existing_like = db.collection('likes').document(like_id).get()
         
+        # Use batch write for atomic operation
+        batch = db.batch()
+        
         if existing_like.exists:
             # Remove like
-            db.collection('likes').document(like_id).delete()
-            db.collection('glyphs').document(glyph_id).update({
-                'likes': firestore.Increment(-1)
-            })
+            like_ref = db.collection('likes').document(like_id)
+            batch.delete(like_ref)
+            
+            # Decrement denormalized like count on glyph
+            glyph_ref = db.collection('glyphs').document(glyph_id)
+            batch.update(glyph_ref, {'likes': firestore.Increment(-1)})
+            
             liked = False
         else:
             # Add like
-            db.collection('likes').document(like_id).set({
+            like_ref = db.collection('likes').document(like_id)
+            batch.set(like_ref, {
                 'glyphId': glyph_id,
                 'userId': user_id,
                 'likedAt': firestore.SERVER_TIMESTAMP
             })
-            db.collection('glyphs').document(glyph_id).update({
-                'likes': firestore.Increment(1)
-            })
+            
+            # Increment denormalized like count on glyph
+            glyph_ref = db.collection('glyphs').document(glyph_id)
+            batch.update(glyph_ref, {'likes': firestore.Increment(1)})
+            
             liked = True
         
-        # Get updated like count
-        likes_count = db.collection('likes').where('glyphId', '==', glyph_id).stream()
-        total_likes = len(list(likes_count))
+        # Commit batch
+        batch.commit()
+        
+        # Get updated like count from denormalized data
+        glyph_doc = db.collection('glyphs').document(glyph_id).get()
+        total_likes = glyph_doc.to_dict().get('likes', 0) if glyph_doc.exists else 0
         
         return jsonify({'liked': liked, 'totalLikes': total_likes})
         
@@ -1321,7 +1328,7 @@ def get_glyph_requests():
 @app.route('/api/glyph-requests', methods=['POST'])
 @limiter.limit("5/minute")
 @verify_token
-@require_auth
+@require_auth_strict
 def create_glyph_request():
     """Create a new glyph request"""
     try:
@@ -1416,7 +1423,7 @@ def get_glyph_request(request_id):
 @app.route('/api/glyph-requests/<request_id>/take-on', methods=['POST'])
 @limiter.limit("10/minute")
 @verify_token
-@require_auth
+@require_auth_strict
 def take_on_glyph_request(request_id):
     """Allow a user with 1+ glyphs to take on a glyph request"""
     try:
@@ -1455,7 +1462,7 @@ def take_on_glyph_request(request_id):
 @app.route('/api/glyph-requests/<request_id>/complete', methods=['POST'])
 @limiter.limit("10/minute")
 @verify_token
-@require_auth
+@require_auth_strict
 def complete_glyph_request(request_id):
     """Mark a glyph request as completed (for assigned user)"""
     try:
@@ -1500,7 +1507,7 @@ def complete_glyph_request(request_id):
 @app.route('/api/glyph-requests/<request_id>/cancel', methods=['POST'])
 @limiter.limit("10/minute")
 @verify_token
-@require_auth
+@require_auth_strict
 def cancel_glyph_request(request_id):
     """Cancel a glyph request (for assigned user or request creator)"""
     try:
@@ -1539,7 +1546,7 @@ def cancel_glyph_request(request_id):
 @app.route('/api/my-glyph-requests', methods=['GET', 'OPTIONS'])
 @limiter.limit("30/minute")
 @verify_token
-@require_auth
+@require_auth_strict
 def get_my_glyph_requests():
     """Get glyph requests for the current user (created or assigned to)"""
     try:
