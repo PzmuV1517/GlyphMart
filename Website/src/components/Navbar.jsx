@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Search, User, Menu, X, LogOut, Settings, Plus, Heart, Store, Crown } from 'lucide-react';
+import { Search, User, Menu, X, LogOut, Settings, Plus, Heart, Store, Crown, MessageSquare } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cleanImageUrl } from '../utils/apiClient';
@@ -48,8 +48,8 @@ const Navbar = () => {
             </Link>
           </div>
 
-          {/* Search Bar (hidden on /search) */}
-          {location.pathname !== '/search' && (
+          {/* Search Bar (hidden on /search and /request-glyphs) */}
+          {location.pathname !== '/search' && location.pathname !== '/request-glyphs' && (
             <div className="hidden md:block flex-1 max-w-lg mx-8">
               <form onSubmit={handleSearch} className="relative">
                 <input
@@ -111,6 +111,13 @@ const Navbar = () => {
                       >
                         <Heart className="h-4 w-4" />
                         <span>Liked Posts</span>
+                      </Link>
+                      <Link
+                        to="/request-glyphs"
+                        className="block px-4 py-2 text-sm text-nothing-white hover:bg-nothing-gray-800 transition-colors duration-200 flex items-center space-x-2"
+                      >
+                        <MessageSquare className="h-4 w-4" />
+                        <span>Request Glyphs</span>
                       </Link>
                       <Link
                         to="/settings"

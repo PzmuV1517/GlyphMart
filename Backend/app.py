@@ -1252,6 +1252,257 @@ def admin_delete_glyph(glyph_id):
         logger.error(f"Error deleting glyph: {str(e)}")
         return jsonify({'error': 'Failed to delete glyph'}), 500
 
+# ============================================
+# GLYPH REQUEST ENDPOINTS
+# ============================================
+
+@app.route('/api/glyph-requests', methods=['GET', 'OPTIONS'])
+def get_glyph_requests():
+    """Get all glyph requests with optional search and pagination"""
+    try:
+        # Handle CORS preflight
+        if request.method == 'OPTIONS':
+            response = jsonify({'message': 'OK'})
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+            response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
+            return response
+            
+        search_query = request.args.get('search', '').strip()
+        limit = int(request.args.get('limit', 20))
+        offset = int(request.args.get('offset', 0))
+        
+        # Start with all requests ordered by creation date
+        query = db.collection('glyph_requests').order_by('created_at', direction=firestore.Query.DESCENDING)
+        
+        # Get all documents for search (we'll filter in Python since Firestore text search is limited)
+        docs = query.stream()
+        requests_data = []
+        
+        for doc in docs:
+            data = doc.to_dict()
+            data['id'] = doc.id
+            
+            # Convert timestamp to ISO string
+            if 'created_at' in data and data['created_at']:
+                data['created_at'] = data['created_at'].isoformat()
+            
+            # Get user info for the requester
+            if 'user_id' in data:
+                try:
+                    user_doc = db.collection('users').document(data['user_id']).get()
+                    if user_doc.exists:
+                        user_data = user_doc.to_dict()
+                        data['user'] = {
+                            'username': user_data.get('username', 'Unknown'),
+                            'profilePicture': user_data.get('profilePicture')
+                        }
+                    else:
+                        data['user'] = {'username': 'Unknown'}
+                except Exception:
+                    data['user'] = {'username': 'Unknown'}
+            
+            # Apply search filter if provided
+            if not search_query or (
+                search_query.lower() in data.get('title', '').lower() or
+                search_query.lower() in data.get('description', '').lower() or
+                search_query.lower() in data.get('tags', [])
+            ):
+                requests_data.append(data)
+        
+        # Apply pagination
+        total_count = len(requests_data)
+        paginated_requests = requests_data[offset:offset + limit]
+        
+        return jsonify({
+            'requests': paginated_requests,
+            'total': total_count,
+            'hasMore': offset + limit < total_count
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching glyph requests: {str(e)}")
+        return jsonify({'error': 'Failed to fetch glyph requests'}), 500
+
+@app.route('/api/glyph-requests', methods=['POST'])
+@require_auth
+def create_glyph_request():
+    """Create a new glyph request"""
+    try:
+        data = request.get_json()
+        user_id = data.get('user_id')
+        
+        # Validate required fields
+        if not data.get('title') or not data.get('description'):
+            return jsonify({'error': 'Title and description are required'}), 400
+        
+        # Create the request document
+        request_data = {
+            'title': data['title'],
+            'description': data['description'],
+            'tags': data.get('tags', []),
+            'reference_images': data.get('reference_images', []),
+            'reference_files': data.get('reference_files', []),
+            'user_id': user_id,
+            'status': 'open',  # open, in_progress, completed, cancelled
+            'assigned_to': None,
+            'created_at': datetime.now(timezone.utc),
+            'updated_at': datetime.now(timezone.utc)
+        }
+        
+        # Add to database
+        doc_ref = db.collection('glyph_requests').add(request_data)
+        request_id = doc_ref[1].id
+        
+        return jsonify({
+            'message': 'Glyph request created successfully',
+            'request_id': request_id
+        })
+        
+    except Exception as e:
+        logger.error(f"Error creating glyph request: {str(e)}")
+        return jsonify({'error': 'Failed to create glyph request'}), 500
+
+@app.route('/api/glyph-requests/<request_id>', methods=['GET', 'OPTIONS'])
+def get_glyph_request(request_id):
+    """Get a specific glyph request by ID"""
+    try:
+        # Handle CORS preflight
+        if request.method == 'OPTIONS':
+            response = jsonify({'message': 'OK'})
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+            response.headers.add('Access-Control-Allow-Methods', 'GET,OPTIONS')
+            return response
+            
+        doc = db.collection('glyph_requests').document(request_id).get()
+        
+        if not doc.exists:
+            return jsonify({'error': 'Glyph request not found'}), 404
+        
+        data = doc.to_dict()
+        data['id'] = doc.id
+        
+        # Convert timestamp to ISO string
+        if 'created_at' in data and data['created_at']:
+            data['created_at'] = data['created_at'].isoformat()
+        if 'updated_at' in data and data['updated_at']:
+            data['updated_at'] = data['updated_at'].isoformat()
+        
+        # Get user info for the requester
+        if 'user_id' in data:
+            try:
+                user_doc = db.collection('users').document(data['user_id']).get()
+                if user_doc.exists:
+                    user_data = user_doc.to_dict()
+                    data['user'] = {
+                        'username': user_data.get('username', 'Unknown'),
+                        'profilePicture': user_data.get('profilePicture')
+                    }
+                else:
+                    data['user'] = {'username': 'Unknown'}
+            except Exception:
+                data['user'] = {'username': 'Unknown'}
+        
+        # Get assigned user info if assigned
+        if data.get('assigned_to'):
+            try:
+                assigned_user_doc = db.collection('users').document(data['assigned_to']).get()
+                if assigned_user_doc.exists:
+                    assigned_user_data = assigned_user_doc.to_dict()
+                    data['assigned_user'] = {
+                        'username': assigned_user_data.get('username', 'Unknown'),
+                        'profilePicture': assigned_user_data.get('profilePicture')
+                    }
+            except Exception:
+                pass
+        
+        return jsonify(data)
+        
+    except Exception as e:
+        logger.error(f"Error fetching glyph request: {str(e)}")
+        return jsonify({'error': 'Failed to fetch glyph request'}), 500
+
+@app.route('/api/glyph-requests/<request_id>/take-on', methods=['POST'])
+@require_auth
+def take_on_glyph_request(request_id):
+    """Allow a user with 1+ glyphs to take on a glyph request"""
+    try:
+        data = request.get_json()
+        user_id = data.get('user_id')
+        
+        # Check if user has at least 1 glyph
+        user_glyphs = db.collection('glyphs').where('user_id', '==', user_id).limit(1).get()
+        if not list(user_glyphs):
+            return jsonify({'error': 'You must have at least 1 uploaded glyph to take on requests'}), 403
+        
+        # Get the request
+        request_doc = db.collection('glyph_requests').document(request_id).get()
+        if not request_doc.exists:
+            return jsonify({'error': 'Request not found'}), 404
+        
+        request_data = request_doc.to_dict()
+        
+        # Check if request is still open
+        if request_data.get('status') != 'open':
+            return jsonify({'error': 'This request is no longer available'}), 400
+        
+        # Update the request
+        db.collection('glyph_requests').document(request_id).update({
+            'assigned_to': user_id,
+            'status': 'in_progress',
+            'updated_at': datetime.now(timezone.utc)
+        })
+        
+        return jsonify({'message': 'Successfully took on the glyph request'})
+        
+    except Exception as e:
+        logger.error(f"Error taking on glyph request: {str(e)}")
+        return jsonify({'error': 'Failed to take on glyph request'}), 500
+
+@app.route('/api/glyph-requests/<request_id>/complete', methods=['POST'])
+@require_auth
+def complete_glyph_request(request_id):
+    """Mark a glyph request as completed (for assigned user)"""
+    try:
+        data = request.get_json()
+        user_id = data.get('user_id')
+        glyph_id = data.get('glyph_id')  # The ID of the glyph that fulfills the request
+        
+        # Get the request
+        request_doc = db.collection('glyph_requests').document(request_id).get()
+        if not request_doc.exists:
+            return jsonify({'error': 'Request not found'}), 404
+        
+        request_data = request_doc.to_dict()
+        
+        # Check if user is assigned to this request
+        if request_data.get('assigned_to') != user_id:
+            return jsonify({'error': 'You are not assigned to this request'}), 403
+        
+        # Verify the glyph exists and belongs to the user
+        if glyph_id:
+            glyph_doc = db.collection('glyphs').document(glyph_id).get()
+            if not glyph_doc.exists or glyph_doc.to_dict().get('user_id') != user_id:
+                return jsonify({'error': 'Invalid glyph provided'}), 400
+        
+        # Update the request
+        update_data = {
+            'status': 'completed',
+            'updated_at': datetime.now(timezone.utc)
+        }
+        
+        if glyph_id:
+            update_data['completion_glyph_id'] = glyph_id
+        
+        db.collection('glyph_requests').document(request_id).update(update_data)
+        
+        return jsonify({'message': 'Request marked as completed'})
+        
+    except Exception as e:
+        logger.error(f"Error completing glyph request: {str(e)}")
+        return jsonify({'error': 'Failed to complete glyph request'}), 500
+
 @app.errorhandler(429)
 def not_found_handler(e):
     return jsonify({'error': 'Endpoint not found'}), 404

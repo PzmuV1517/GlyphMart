@@ -77,6 +77,12 @@ const Home = () => {
               >
                 Upload Your Glyph
               </Link>
+              <Link
+                to="/request-glyphs"
+                className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-nothing-white px-8 py-3 rounded-lg font-semibold text-lg transition-colors duration-200"
+              >
+                Request Glyph Toys
+              </Link>
             </div>
           </motion.div>
         </div>
