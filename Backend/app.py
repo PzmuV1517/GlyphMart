@@ -1497,6 +1497,219 @@ def complete_glyph_request(request_id):
         logger.error(f"Error completing glyph request: {str(e)}")
         return jsonify({'error': 'Failed to complete glyph request'}), 500
 
+@app.route('/api/glyph-requests/<request_id>/cancel', methods=['POST'])
+@limiter.limit("10/minute")
+@verify_token
+@require_auth
+def cancel_glyph_request(request_id):
+    """Cancel a glyph request (for assigned user or request creator)"""
+    try:
+        user_id = request.user['uid']  # Get from authenticated token
+        
+        # Get the request
+        request_doc = db.collection('glyph_requests').document(request_id).get()
+        if not request_doc.exists:
+            return jsonify({'error': 'Request not found'}), 404
+        
+        request_data = request_doc.to_dict()
+        
+        # Check if user is assigned to this request or is the creator
+        if request_data.get('assigned_to') != user_id and request_data.get('user_id') != user_id:
+            return jsonify({'error': 'You are not authorized to cancel this request'}), 403
+        
+        # Update the request status
+        update_data = {
+            'status': 'cancelled',
+            'updated_at': datetime.now(timezone.utc)
+        }
+        
+        # If assigned user is cancelling, unassign it and make it open again
+        if request_data.get('assigned_to') == user_id and request_data.get('user_id') != user_id:
+            update_data['status'] = 'open'
+            update_data['assigned_to'] = None
+        
+        db.collection('glyph_requests').document(request_id).update(update_data)
+        
+        return jsonify({'message': 'Request cancelled successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error cancelling glyph request: {str(e)}")
+        return jsonify({'error': 'Failed to cancel glyph request'}), 500
+
+@app.route('/api/my-glyph-requests', methods=['GET', 'OPTIONS'])
+@limiter.limit("30/minute")
+@verify_token
+@require_auth
+def get_my_glyph_requests():
+    """Get glyph requests for the current user (created or assigned to)"""
+    try:
+        user_id = request.user['uid']
+        request_type = request.args.get('type', 'all')  # all, created, assigned
+        
+        # Get requests created by user
+        created_requests = []
+        if request_type in ['all', 'created']:
+            created_docs = db.collection('glyph_requests').where('user_id', '==', user_id).order_by('created_at', direction=firestore.Query.DESCENDING).stream()
+            for doc in created_docs:
+                data = doc.to_dict()
+                data['id'] = doc.id
+                data['type'] = 'created'
+                
+                # Convert timestamp to ISO string
+                if 'created_at' in data and data['created_at']:
+                    data['created_at'] = data['created_at'].isoformat()
+                if 'updated_at' in data and data['updated_at']:
+                    data['updated_at'] = data['updated_at'].isoformat()
+                
+                # Get assigned user info if assigned
+                if data.get('assigned_to'):
+                    try:
+                        assigned_user_doc = db.collection('users').document(data['assigned_to']).get()
+                        if assigned_user_doc.exists:
+                            assigned_user_data = assigned_user_doc.to_dict()
+                            data['assigned_user'] = {
+                                'username': assigned_user_data.get('username', 'Unknown'),
+                                'profilePicture': assigned_user_data.get('profilePicture')
+                            }
+                    except Exception:
+                        pass
+                
+                created_requests.append(data)
+        
+        # Get requests assigned to user
+        assigned_requests = []
+        if request_type in ['all', 'assigned']:
+            assigned_docs = db.collection('glyph_requests').where('assigned_to', '==', user_id).order_by('created_at', direction=firestore.Query.DESCENDING).stream()
+            for doc in assigned_docs:
+                data = doc.to_dict()
+                data['id'] = doc.id
+                data['type'] = 'assigned'
+                
+                # Convert timestamp to ISO string
+                if 'created_at' in data and data['created_at']:
+                    data['created_at'] = data['created_at'].isoformat()
+                if 'updated_at' in data and data['updated_at']:
+                    data['updated_at'] = data['updated_at'].isoformat()
+                
+                # Get requester info
+                if 'user_id' in data:
+                    try:
+                        user_doc = db.collection('users').document(data['user_id']).get()
+                        if user_doc.exists:
+                            user_data = user_doc.to_dict()
+                            data['user'] = {
+                                'username': user_data.get('username', 'Unknown'),
+                                'profilePicture': user_data.get('profilePicture')
+                            }
+                        else:
+                            data['user'] = {'username': 'Unknown'}
+                    except Exception:
+                        data['user'] = {'username': 'Unknown'}
+                
+                assigned_requests.append(data)
+        
+        # Combine and sort by creation date
+        all_requests = created_requests + assigned_requests
+        all_requests.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+        
+        return jsonify({
+            'requests': all_requests,
+            'total': len(all_requests)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching my glyph requests: {str(e)}")
+        return jsonify({'error': 'Failed to fetch my glyph requests'}), 500
+
+# ============================================
+# ADMIN GLYPH REQUEST ENDPOINTS
+# ============================================
+
+@app.route('/api/admin/glyph-requests/<request_id>', methods=['DELETE'])
+@limiter.limit("10/minute")
+@verify_token
+@require_auth_strict
+def admin_delete_glyph_request(request_id):
+    """Delete a glyph request (admin only)"""
+    try:
+        user_id = request.user['uid']
+        
+        # Check if user is admin
+        if not is_admin(user_id):
+            return jsonify({'error': 'Admin access required'}), 403
+        
+        # Delete the request
+        db.collection('glyph_requests').document(request_id).delete()
+        
+        return jsonify({'message': 'Request deleted successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error deleting glyph request: {str(e)}")
+        return jsonify({'error': 'Failed to delete glyph request'}), 500
+
+@app.route('/api/admin/glyph-requests/<request_id>/force-complete', methods=['POST'])
+@limiter.limit("10/minute")
+@verify_token
+@require_auth_strict
+def admin_force_complete_request(request_id):
+    """Force complete a glyph request (admin only)"""
+    try:
+        user_id = request.user['uid']
+        
+        # Check if user is admin
+        if not is_admin(user_id):
+            return jsonify({'error': 'Admin access required'}), 403
+        
+        # Get the request
+        request_doc = db.collection('glyph_requests').document(request_id).get()
+        if not request_doc.exists:
+            return jsonify({'error': 'Request not found'}), 404
+        
+        # Update the request
+        db.collection('glyph_requests').document(request_id).update({
+            'status': 'completed',
+            'updated_at': datetime.now(timezone.utc),
+            'admin_completed': True
+        })
+        
+        return jsonify({'message': 'Request force completed successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error force completing glyph request: {str(e)}")
+        return jsonify({'error': 'Failed to force complete glyph request'}), 500
+
+@app.route('/api/admin/glyph-requests/<request_id>/reset', methods=['POST'])
+@limiter.limit("10/minute")
+@verify_token
+@require_auth_strict
+def admin_reset_request(request_id):
+    """Reset a glyph request to open status (admin only)"""
+    try:
+        user_id = request.user['uid']
+        
+        # Check if user is admin
+        if not is_admin(user_id):
+            return jsonify({'error': 'Admin access required'}), 403
+        
+        # Get the request
+        request_doc = db.collection('glyph_requests').document(request_id).get()
+        if not request_doc.exists:
+            return jsonify({'error': 'Request not found'}), 404
+        
+        # Update the request
+        db.collection('glyph_requests').document(request_id).update({
+            'status': 'open',
+            'assigned_to': None,
+            'updated_at': datetime.now(timezone.utc),
+            'admin_reset': True
+        })
+        
+        return jsonify({'message': 'Request reset successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error resetting glyph request: {str(e)}")
+        return jsonify({'error': 'Failed to reset glyph request'}), 500
+
 @app.errorhandler(429)
 def not_found_handler(e):
     return jsonify({'error': 'Endpoint not found'}), 404

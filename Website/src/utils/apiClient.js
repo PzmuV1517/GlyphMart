@@ -327,6 +327,18 @@ class APIClient {
       body: JSON.stringify(data),
     });
   }
+
+  async cancelGlyphRequest(requestId) {
+    return this.request(`/glyph-requests/${requestId}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async getMyGlyphRequests(type = 'all') {
+    const params = new URLSearchParams({ type });
+    return this.request(`/my-glyph-requests?${params}`);
+  }
 }
 
 export const apiClient = new APIClient();

@@ -120,6 +120,13 @@ const Navbar = () => {
                         <span>Request Glyphs</span>
                       </Link>
                       <Link
+                        to="/my-requests"
+                        className="block px-4 py-2 text-sm text-nothing-white hover:bg-nothing-gray-800 transition-colors duration-200 flex items-center space-x-2"
+                      >
+                        <MessageSquare className="h-4 w-4" />
+                        <span>My Requests</span>
+                      </Link>
+                      <Link
                         to="/settings"
                         className="block px-4 py-2 text-sm text-nothing-white hover:bg-nothing-gray-800 transition-colors duration-200 flex items-center space-x-2"
                       >

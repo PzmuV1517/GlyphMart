@@ -13,7 +13,11 @@ import {
   TrendingUp,
   Eye,
   Download,
-  Heart
+  Heart,
+  MessageSquare,
+  Clock,
+  CheckCircle,
+  XCircle
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
@@ -46,6 +50,10 @@ const Admin = () => {
   // Glyphs management
   const [allGlyphs, setAllGlyphs] = useState([]);
   const [selectedGlyph, setSelectedGlyph] = useState(null);
+  
+  // Requests management
+  const [allRequests, setAllRequests] = useState([]);
+  const [requestsLoading, setRequestsLoading] = useState(false);
   
   // Admin management
   const [newAdminEmail, setNewAdminEmail] = useState('');
@@ -80,17 +88,19 @@ const Admin = () => {
     try {
       setLoading(true);
       
-      // Load stats, users, and glyphs
-      const [statsData, usersData, glyphsData] = await Promise.all([
+      // Load stats, users, glyphs, and requests
+      const [statsData, usersData, glyphsData, requestsData] = await Promise.all([
         apiClient.getAdminStats(),
         apiClient.getAllUsers(),
-        apiClient.getGlyphs({ limit: 1000 }) // Get all glyphs for admin
+        apiClient.getGlyphs({ limit: 1000 }), // Get all glyphs for admin
+        apiClient.getGlyphRequests({ limit: 1000 }) // Get all requests for admin
       ]);
       
       setStats(statsData);
       setUsers(usersData);
       setFilteredUsers(usersData);
       setAllGlyphs(glyphsData);
+      setAllRequests(requestsData.requests || []);
       
       // Filter admin users
       const admins = usersData.filter(user => 
@@ -187,6 +197,99 @@ const Admin = () => {
     }
   };
 
+  const handleDeleteRequest = async (requestId) => {
+    if (!confirm('Are you sure you want to delete this request?')) return;
+    
+    try {
+      setActionLoading(true);
+      // This will need a new backend endpoint
+      await apiClient.request(`/admin/glyph-requests/${requestId}`, {
+        method: 'DELETE'
+      });
+      
+      // Remove from local state
+      setAllRequests(prev => prev.filter(r => r.id !== requestId));
+      alert('Request deleted successfully!');
+    } catch (error) {
+      console.error('Error deleting request:', error);
+      alert('Failed to delete request');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleForceCompleteRequest = async (requestId) => {
+    if (!confirm('Are you sure you want to force complete this request?')) return;
+    
+    try {
+      setActionLoading(true);
+      // This will need a new backend endpoint
+      await apiClient.request(`/admin/glyph-requests/${requestId}/force-complete`, {
+        method: 'POST',
+        body: JSON.stringify({})
+      });
+      
+      // Update local state
+      setAllRequests(prev => 
+        prev.map(r => r.id === requestId ? { ...r, status: 'completed' } : r)
+      );
+      alert('Request marked as completed!');
+    } catch (error) {
+      console.error('Error completing request:', error);
+      alert('Failed to complete request');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleResetRequest = async (requestId) => {
+    if (!confirm('Are you sure you want to reset this request to open status?')) return;
+    
+    try {
+      setActionLoading(true);
+      // This will need a new backend endpoint
+      await apiClient.request(`/admin/glyph-requests/${requestId}/reset`, {
+        method: 'POST',
+        body: JSON.stringify({})
+      });
+      
+      // Update local state
+      setAllRequests(prev => 
+        prev.map(r => r.id === requestId ? { ...r, status: 'open', assigned_to: null } : r)
+      );
+      alert('Request reset to open status!');
+    } catch (error) {
+      console.error('Error resetting request:', error);
+      alert('Failed to reset request');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const formatDate = (dateString) => {
+    try {
+      return new Date(dateString).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return 'Unknown date';
+    }
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'open': return 'text-green-400 bg-green-400/10';
+      case 'in_progress': return 'text-yellow-400 bg-yellow-400/10';
+      case 'completed': return 'text-blue-400 bg-blue-400/10';
+      case 'cancelled': return 'text-red-400 bg-red-400/10';
+      default: return 'text-nothing-gray-400 bg-nothing-gray-400/10';
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-nothing-black flex items-center justify-center">
@@ -242,6 +345,7 @@ const Admin = () => {
               { id: 'stats', label: 'Statistics', icon: BarChart3 },
               { id: 'users', label: 'Users', icon: Users },
               { id: 'glyphs', label: 'Glyphs', icon: FileImage },
+              { id: 'requests', label: 'Requests', icon: MessageSquare },
               { id: 'admins', label: 'Admins', icon: Shield }
             ].map(({ id, label, icon: Icon }) => (
               <button
@@ -522,6 +626,149 @@ const Admin = () => {
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'requests' && (
+            <div className="space-y-6">
+              {/* Requests Stats */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div className="bg-nothing-gray-900 border border-nothing-gray-800 rounded-lg p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-nothing-gray-400 text-sm">Total Requests</p>
+                      <p className="text-3xl font-bold text-nothing-white">{allRequests.length}</p>
+                    </div>
+                    <MessageSquare className="h-8 w-8 text-purple-500" />
+                  </div>
+                </div>
+                <div className="bg-nothing-gray-900 border border-nothing-gray-800 rounded-lg p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-nothing-gray-400 text-sm">Open</p>
+                      <p className="text-3xl font-bold text-nothing-white">
+                        {allRequests.filter(r => r.status === 'open').length}
+                      </p>
+                    </div>
+                    <Clock className="h-8 w-8 text-green-500" />
+                  </div>
+                </div>
+                <div className="bg-nothing-gray-900 border border-nothing-gray-800 rounded-lg p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-nothing-gray-400 text-sm">In Progress</p>
+                      <p className="text-3xl font-bold text-nothing-white">
+                        {allRequests.filter(r => r.status === 'in_progress').length}
+                      </p>
+                    </div>
+                    <Eye className="h-8 w-8 text-yellow-500" />
+                  </div>
+                </div>
+                <div className="bg-nothing-gray-900 border border-nothing-gray-800 rounded-lg p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-nothing-gray-400 text-sm">Completed</p>
+                      <p className="text-3xl font-bold text-nothing-white">
+                        {allRequests.filter(r => r.status === 'completed').length}
+                      </p>
+                    </div>
+                    <CheckCircle className="h-8 w-8 text-blue-500" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Requests List */}
+              <div className="bg-nothing-gray-900 border border-nothing-gray-800 rounded-lg">
+                <div className="p-6 border-b border-nothing-gray-800">
+                  <h3 className="text-lg font-semibold">All Glyph Requests</h3>
+                  <p className="text-nothing-gray-400 text-sm">Manage and monitor all glyph requests</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-nothing-gray-800">
+                        <th className="text-left p-4 text-nothing-gray-400 font-medium">Title</th>
+                        <th className="text-left p-4 text-nothing-gray-400 font-medium">Status</th>
+                        <th className="text-left p-4 text-nothing-gray-400 font-medium">Requester</th>
+                        <th className="text-left p-4 text-nothing-gray-400 font-medium">Assigned To</th>
+                        <th className="text-left p-4 text-nothing-gray-400 font-medium">Created</th>
+                        <th className="text-left p-4 text-nothing-gray-400 font-medium">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allRequests.length === 0 ? (
+                        <tr>
+                          <td colSpan="6" className="p-8 text-center text-nothing-gray-400">
+                            No requests found
+                          </td>
+                        </tr>
+                      ) : (
+                        allRequests.map((request) => (
+                          <tr key={request.id} className="border-b border-nothing-gray-800 hover:bg-nothing-gray-800/50">
+                            <td className="p-4">
+                              <div>
+                                <p className="text-nothing-white font-medium">{request.title}</p>
+                                <p className="text-nothing-gray-400 text-sm truncate max-w-xs">
+                                  {request.description}
+                                </p>
+                              </div>
+                            </td>
+                            <td className="p-4">
+                              <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(request.status)}`}>
+                                {request.status.replace('_', ' ').toUpperCase()}
+                              </span>
+                            </td>
+                            <td className="p-4">
+                              <span className="text-nothing-white">
+                                {request.user?.username || 'Unknown'}
+                              </span>
+                            </td>
+                            <td className="p-4">
+                              <span className="text-nothing-white">
+                                {request.assigned_user?.username || (request.assigned_to ? 'Unknown' : 'None')}
+                              </span>
+                            </td>
+                            <td className="p-4">
+                              <span className="text-nothing-gray-400 text-sm">
+                                {formatDate(request.created_at)}
+                              </span>
+                            </td>
+                            <td className="p-4">
+                              <div className="flex items-center space-x-2">
+                                {request.status === 'in_progress' && (
+                                  <button
+                                    onClick={() => handleForceCompleteRequest(request.id)}
+                                    disabled={actionLoading}
+                                    className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors duration-200 disabled:opacity-50"
+                                  >
+                                    Complete
+                                  </button>
+                                )}
+                                {(request.status === 'in_progress' || request.status === 'completed') && (
+                                  <button
+                                    onClick={() => handleResetRequest(request.id)}
+                                    disabled={actionLoading}
+                                    className="px-3 py-1 bg-yellow-600 hover:bg-yellow-700 text-white text-xs rounded transition-colors duration-200 disabled:opacity-50"
+                                  >
+                                    Reset
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => handleDeleteRequest(request.id)}
+                                  disabled={actionLoading}
+                                  className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors duration-200 disabled:opacity-50"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>

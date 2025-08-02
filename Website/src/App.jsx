@@ -13,6 +13,7 @@ import LikedPosts from './pages/LikedPosts';
 import Settings from './pages/Settings';
 import Admin from './pages/Admin';
 import RequestGlyphs from './pages/RequestGlyphs';
+import MyRequests from './pages/MyRequests';
 import './App.css';
 
 // Protected Route component
@@ -63,6 +64,14 @@ function App() {
             />
             <Route path="/search" element={<Search />} />
             <Route path="/request-glyphs" element={<RequestGlyphs />} />
+            <Route 
+              path="/my-requests" 
+              element={
+                <ProtectedRoute>
+                  <MyRequests />
+                </ProtectedRoute>
+              } 
+            />
             <Route 
               path="/liked" 
               element={
