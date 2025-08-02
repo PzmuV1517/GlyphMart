@@ -166,6 +166,46 @@ def handle_preflight():
         response.headers.add('Access-Control-Allow-Methods', "GET,PUT,POST,DELETE,OPTIONS")
         return response
 
+def get_real_glyph_counts(glyph_ids):
+    """Get real-time counts for multiple glyphs efficiently"""
+    counts = {}
+    
+    # Initialize counts for all glyphs
+    for glyph_id in glyph_ids:
+        counts[glyph_id] = {'views': 0, 'likes': 0, 'downloads': 0}
+    
+    try:
+        # Process in batches of 10 (Firestore 'in' limit)
+        batch_size = 10
+        for i in range(0, len(glyph_ids), batch_size):
+            batch_ids = glyph_ids[i:i + batch_size]
+            
+            # Get all views for this batch
+            views_query = db.collection('glyphViews').where('glyphId', 'in', batch_ids)
+            for view_doc in views_query.stream():
+                glyph_id = view_doc.to_dict().get('glyphId')
+                if glyph_id in counts:
+                    counts[glyph_id]['views'] += 1
+            
+            # Get all likes for this batch
+            likes_query = db.collection('likes').where('glyphId', 'in', batch_ids)
+            for like_doc in likes_query.stream():
+                glyph_id = like_doc.to_dict().get('glyphId')
+                if glyph_id in counts:
+                    counts[glyph_id]['likes'] += 1
+            
+            # Get all downloads for this batch
+            downloads_query = db.collection('glyphDownloads').where('glyphId', 'in', batch_ids)
+            for download_doc in downloads_query.stream():
+                glyph_id = download_doc.to_dict().get('glyphId')
+                if glyph_id in counts:
+                    counts[glyph_id]['downloads'] += 1
+                    
+    except Exception as e:
+        logger.error(f"Error getting real counts: {e}")
+    
+    return counts
+
 @app.route('/api/get-glyphs', methods=['GET', 'OPTIONS'])
 @limiter.limit("30/minute")
 @verify_token
@@ -181,35 +221,26 @@ def get_glyphs():
         # Build Firestore query
         glyphs_ref = db.collection('glyphs')
         
-        # Use composite indexes for creator filtering with sorting
+        # Apply creator filter if specified
         if creator_id:
             glyphs_ref = glyphs_ref.where('creatorId', '==', creator_id)
-            
-            # Apply sorting with composite indexes
-            if sort_by == 'popular':
-                glyphs_ref = glyphs_ref.order_by('downloads', direction=firestore.Query.DESCENDING)
-            elif sort_by == 'liked':
-                glyphs_ref = glyphs_ref.order_by('likes', direction=firestore.Query.DESCENDING)
-            elif sort_by == 'viewed':
-                glyphs_ref = glyphs_ref.order_by('views', direction=firestore.Query.DESCENDING)
-            else:  # latest
-                glyphs_ref = glyphs_ref.order_by('createdAt', direction=firestore.Query.DESCENDING)
-        else:
-            # For non-creator queries, use Firestore sorting
-            if sort_by == 'popular':
-                glyphs_ref = glyphs_ref.order_by('downloads', direction=firestore.Query.DESCENDING)
-            elif sort_by == 'liked':
-                glyphs_ref = glyphs_ref.order_by('likes', direction=firestore.Query.DESCENDING)
-            elif sort_by == 'viewed':
-                glyphs_ref = glyphs_ref.order_by('views', direction=firestore.Query.DESCENDING)
-            else:  # latest
-                glyphs_ref = glyphs_ref.order_by('createdAt', direction=firestore.Query.DESCENDING)
         
-        glyphs_ref = glyphs_ref.limit(limit_count)
+        # For latest sorting, we can use Firestore sorting
+        # For other sorts, we'll need to sort after getting real counts
+        if sort_by == 'latest':
+            glyphs_ref = glyphs_ref.order_by('createdAt', direction=firestore.Query.DESCENDING)
+            # Apply limit for latest since sorting is done in Firestore
+            glyphs_ref = glyphs_ref.limit(limit_count)
+        else:
+            # For popularity-based sorting, get more records and sort client-side
+            # This ensures we get the correct top items after real count calculation
+            query_limit = limit_count * 3 if creator_id else limit_count * 2
+            glyphs_ref = glyphs_ref.limit(min(query_limit, 100))
         
         # Execute query
         docs = glyphs_ref.stream()
         glyphs = []
+        glyph_ids = []
         
         for doc in docs:
             glyph_data = doc.to_dict()
@@ -219,13 +250,36 @@ def get_glyphs():
             if 'createdAt' in glyph_data and glyph_data['createdAt']:
                 glyph_data['createdAt'] = glyph_data['createdAt'].isoformat()
             
-            # Use denormalized data - no additional queries needed
-            # views, likes, downloads are already stored in the glyph document
-            glyph_data['views'] = glyph_data.get('views', 0)
-            glyph_data['likes'] = glyph_data.get('likes', 0)
-            glyph_data['downloads'] = glyph_data.get('downloads', 0)
-            
             glyphs.append(glyph_data)
+            glyph_ids.append(doc.id)
+        
+        # Get real counts for all glyphs in batch
+        real_counts = get_real_glyph_counts(glyph_ids)
+        
+        # Apply real counts to glyphs
+        for glyph in glyphs:
+            glyph_id = glyph['id']
+            if glyph_id in real_counts:
+                glyph['views'] = real_counts[glyph_id]['views']
+                glyph['likes'] = real_counts[glyph_id]['likes']
+                glyph['downloads'] = real_counts[glyph_id]['downloads']
+            else:
+                glyph['views'] = 0
+                glyph['likes'] = 0
+                glyph['downloads'] = 0
+        
+        # Apply sorting based on real counts (except for latest which is already sorted)
+        if sort_by == 'popular':
+            glyphs.sort(key=lambda x: x.get('downloads', 0), reverse=True)
+        elif sort_by == 'liked':
+            glyphs.sort(key=lambda x: x.get('likes', 0), reverse=True)
+        elif sort_by == 'viewed':
+            glyphs.sort(key=lambda x: x.get('views', 0), reverse=True)
+        # latest is already sorted by Firestore
+        
+        # Apply limit after sorting (for non-latest sorts)
+        if sort_by != 'latest':
+            glyphs = glyphs[:limit_count]
         
         # Apply client-side search filtering if provided
         if search_query:
@@ -259,10 +313,15 @@ def get_glyph(glyph_id):
         if 'createdAt' in glyph_data and glyph_data['createdAt']:
             glyph_data['createdAt'] = glyph_data['createdAt'].isoformat()
         
-        # Use denormalized data - no additional queries needed
-        glyph_data['views'] = glyph_data.get('views', 0)
-        glyph_data['likes'] = glyph_data.get('likes', 0)
-        glyph_data['downloads'] = glyph_data.get('downloads', 0)
+        # Get real-time counts from actual collections
+        # Use batch reads for better performance
+        views_docs = list(db.collection('glyphViews').where('glyphId', '==', glyph_id).stream())
+        likes_docs = list(db.collection('likes').where('glyphId', '==', glyph_id).stream())
+        downloads_docs = list(db.collection('glyphDownloads').where('glyphId', '==', glyph_id).stream())
+        
+        glyph_data['views'] = len(views_docs)
+        glyph_data['likes'] = len(likes_docs)
+        glyph_data['downloads'] = len(downloads_docs)
         
         return jsonify({'glyph': glyph_data})
         
