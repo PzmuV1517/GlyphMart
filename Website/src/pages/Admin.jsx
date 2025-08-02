@@ -17,7 +17,8 @@ import {
   MessageSquare,
   Clock,
   CheckCircle,
-  XCircle
+  XCircle,
+  RefreshCw
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
@@ -62,6 +63,11 @@ const Admin = () => {
   // Loading states
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  
+  // Sync states
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncStatus, setSyncStatus] = useState(null);
+  const [lastSyncResult, setLastSyncResult] = useState(null);
   
   // Active tab
   const [activeTab, setActiveTab] = useState('stats');
@@ -114,6 +120,44 @@ const Admin = () => {
       setLoading(false);
     }
   };
+
+  const handleSyncAllCounts = async () => {
+    try {
+      setSyncLoading(true);
+      setLastSyncResult(null);
+      
+      const result = await apiClient.syncAllGlyphCounts();
+      setLastSyncResult(result);
+      
+      // Reload data to show updated counts
+      await loadAdminData();
+      
+      console.log('Sync completed:', result);
+    } catch (error) {
+      console.error('Sync failed:', error);
+      setLastSyncResult({ 
+        error: true, 
+        message: error.message || 'Sync failed' 
+      });
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  const loadSyncStatus = async () => {
+    try {
+      const status = await apiClient.getSyncStatus();
+      setSyncStatus(status);
+    } catch (error) {
+      console.error('Error loading sync status:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (isAdmin && activeTab === 'stats') {
+      loadSyncStatus();
+    }
+  }, [isAdmin, activeTab]);
 
   const handleUserSearch = (query) => {
     setSearchQuery(query);
@@ -412,6 +456,111 @@ const Admin = () => {
                       <p className="text-3xl font-bold text-nothing-white">{stats.uniqueViewers}</p>
                     </div>
                     <Eye className="h-8 w-8 text-orange-500" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Data Sync Section */}
+              <div className="bg-nothing-gray-900 border border-nothing-gray-800 rounded-lg p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-lg font-semibold text-nothing-white">Data Synchronization</h3>
+                    <p className="text-nothing-gray-400 text-sm">Update glyph counts from Firebase</p>
+                  </div>
+                  <RefreshCw className="h-6 w-6 text-nothing-red" />
+                </div>
+                
+                <div className="space-y-4">
+                  {/* Sync Status */}
+                  {syncStatus && (
+                    <div className="bg-nothing-gray-800 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-nothing-gray-300 text-sm font-medium">Background Sync Status</span>
+                        <span className={`text-xs px-2 py-1 rounded ${
+                          syncStatus.status === 'running' 
+                            ? 'bg-blue-500/20 text-blue-400'
+                            : syncStatus.status === 'completed'
+                            ? 'bg-green-500/20 text-green-400'
+                            : 'bg-nothing-gray-700 text-nothing-gray-400'
+                        }`}>
+                          {syncStatus.status === 'running' ? 'Running' : 
+                           syncStatus.status === 'completed' ? 'Completed' : 'Idle'}
+                        </span>
+                      </div>
+                      {syncStatus.lastRun && (
+                        <div className="text-nothing-gray-400 text-xs">
+                          Last run: {new Date(syncStatus.lastRun).toLocaleString()}
+                        </div>
+                      )}
+                      {syncStatus.nextRun && (
+                        <div className="text-nothing-gray-400 text-xs">
+                          Next run: {new Date(syncStatus.nextRun).toLocaleString()}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Manual Sync Button */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-nothing-white font-medium">Manual Sync</p>
+                      <p className="text-nothing-gray-400 text-sm">Update all glyph view, like, and download counts</p>
+                    </div>
+                    <button
+                      onClick={handleSyncAllCounts}
+                      disabled={syncLoading}
+                      className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
+                        syncLoading
+                          ? 'bg-nothing-gray-700 text-nothing-gray-400 cursor-not-allowed'
+                          : 'bg-nothing-red hover:bg-nothing-red/80 text-white'
+                      }`}
+                    >
+                      <RefreshCw className={`h-4 w-4 ${syncLoading ? 'animate-spin' : ''}`} />
+                      <span>{syncLoading ? 'Syncing...' : 'Sync All'}</span>
+                    </button>
+                  </div>
+
+                  {/* Last Sync Result */}
+                  {lastSyncResult && (
+                    <div className={`p-3 rounded-lg text-sm ${
+                      lastSyncResult.success
+                        ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                        : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                    }`}>
+                      <div className="flex items-center space-x-2">
+                        {lastSyncResult.success ? (
+                          <CheckCircle className="h-4 w-4" />
+                        ) : (
+                          <XCircle className="h-4 w-4" />
+                        )}
+                        <span className="font-medium">
+                          {lastSyncResult.success ? 'Sync completed successfully' : 'Sync failed'}
+                        </span>
+                      </div>
+                      {lastSyncResult.message && (
+                        <p className="mt-1 text-xs opacity-80">{lastSyncResult.message}</p>
+                      )}
+                      {lastSyncResult.updated && (
+                        <p className="mt-1 text-xs opacity-80">
+                          Updated {lastSyncResult.updated} glyph{lastSyncResult.updated !== 1 ? 's' : ''}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Auto-Sync Information */}
+                  <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
+                    <div className="flex items-start space-x-2">
+                      <Clock className="h-4 w-4 text-blue-400 mt-0.5 flex-shrink-0" />
+                      <div className="text-sm">
+                        <p className="text-blue-400 font-medium mb-1">Automatic Sync Active</p>
+                        <div className="text-blue-300/80 space-y-1 text-xs">
+                          <p>• Glyph counts update automatically when users visit detail pages</p>
+                          <p>• Background sync runs every hour to update all glyphs</p>
+                          <p>• Use manual sync above for immediate updates</p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

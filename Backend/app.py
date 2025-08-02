@@ -13,6 +13,8 @@ import logging
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
 import uuid
+import threading
+import time
 import mimetypes
 try:
     from PIL import Image
@@ -166,8 +168,8 @@ def handle_preflight():
         response.headers.add('Access-Control-Allow-Methods', "GET,PUT,POST,DELETE,OPTIONS")
         return response
 
-def get_real_glyph_counts(glyph_ids):
-    """Get real-time counts for multiple glyphs efficiently"""
+def get_smart_glyph_counts(glyph_ids):
+    """Get counts using denormalized data with real-time fallback for recent activity"""
     counts = {}
     
     # Initialize counts for all glyphs
@@ -175,34 +177,25 @@ def get_real_glyph_counts(glyph_ids):
         counts[glyph_id] = {'views': 0, 'likes': 0, 'downloads': 0}
     
     try:
-        # Process in batches of 10 (Firestore 'in' limit)
+        # First, get the denormalized counts from glyph documents (fast)
         batch_size = 10
         for i in range(0, len(glyph_ids), batch_size):
             batch_ids = glyph_ids[i:i + batch_size]
             
-            # Get all views for this batch
-            views_query = db.collection('glyphViews').where('glyphId', 'in', batch_ids)
-            for view_doc in views_query.stream():
-                glyph_id = view_doc.to_dict().get('glyphId')
-                if glyph_id in counts:
-                    counts[glyph_id]['views'] += 1
-            
-            # Get all likes for this batch
-            likes_query = db.collection('likes').where('glyphId', 'in', batch_ids)
-            for like_doc in likes_query.stream():
-                glyph_id = like_doc.to_dict().get('glyphId')
-                if glyph_id in counts:
-                    counts[glyph_id]['likes'] += 1
-            
-            # Get all downloads for this batch
-            downloads_query = db.collection('glyphDownloads').where('glyphId', 'in', batch_ids)
-            for download_doc in downloads_query.stream():
-                glyph_id = download_doc.to_dict().get('glyphId')
-                if glyph_id in counts:
-                    counts[glyph_id]['downloads'] += 1
+            # Get glyph documents for denormalized counts
+            for glyph_id in batch_ids:
+                try:
+                    doc = db.collection('glyphs').document(glyph_id).get()
+                    if doc.exists:
+                        data = doc.to_dict()
+                        counts[glyph_id]['views'] = data.get('views', 0)
+                        counts[glyph_id]['likes'] = data.get('likes', 0) 
+                        counts[glyph_id]['downloads'] = data.get('downloads', 0)
+                except:
+                    pass  # Keep defaults if error
                     
     except Exception as e:
-        logger.error(f"Error getting real counts: {e}")
+        logger.error(f"Error getting smart counts: {e}")
     
     return counts
 
@@ -253,16 +246,16 @@ def get_glyphs():
             glyphs.append(glyph_data)
             glyph_ids.append(doc.id)
         
-        # Get real counts for all glyphs in batch
-        real_counts = get_real_glyph_counts(glyph_ids)
+        # Get smart counts for all glyphs (uses denormalized data)
+        smart_counts = get_smart_glyph_counts(glyph_ids)
         
-        # Apply real counts to glyphs
+        # Apply smart counts to glyphs
         for glyph in glyphs:
             glyph_id = glyph['id']
-            if glyph_id in real_counts:
-                glyph['views'] = real_counts[glyph_id]['views']
-                glyph['likes'] = real_counts[glyph_id]['likes']
-                glyph['downloads'] = real_counts[glyph_id]['downloads']
+            if glyph_id in smart_counts:
+                glyph['views'] = smart_counts[glyph_id]['views']
+                glyph['likes'] = smart_counts[glyph_id]['likes']
+                glyph['downloads'] = smart_counts[glyph_id]['downloads']
             else:
                 glyph['views'] = 0
                 glyph['likes'] = 0
@@ -299,7 +292,7 @@ def get_glyphs():
 @limiter.limit("60/minute")
 @verify_token
 def get_glyph(glyph_id):
-    """Get a specific glyph by ID"""
+    """Get a specific glyph by ID with auto-sync of counts"""
     try:
         doc = db.collection('glyphs').document(glyph_id).get()
         
@@ -313,21 +306,200 @@ def get_glyph(glyph_id):
         if 'createdAt' in glyph_data and glyph_data['createdAt']:
             glyph_data['createdAt'] = glyph_data['createdAt'].isoformat()
         
-        # Get real-time counts from actual collections
-        # Use batch reads for better performance
-        views_docs = list(db.collection('glyphViews').where('glyphId', '==', glyph_id).stream())
-        likes_docs = list(db.collection('likes').where('glyphId', '==', glyph_id).stream())
-        downloads_docs = list(db.collection('glyphDownloads').where('glyphId', '==', glyph_id).stream())
+        # Check if we need to sync counts (if never synced or data seems stale)
+        last_sync = glyph_data.get('lastCountSync')
+        should_sync = False
         
-        glyph_data['views'] = len(views_docs)
-        glyph_data['likes'] = len(likes_docs)
-        glyph_data['downloads'] = len(downloads_docs)
+        if not last_sync:
+            # Never been synced
+            should_sync = True
+        else:
+            # Check if sync is older than 1 hour
+            if isinstance(last_sync, datetime):
+                time_diff = datetime.now(timezone.utc) - last_sync.replace(tzinfo=timezone.utc)
+                should_sync = time_diff.total_seconds() > 3600  # 1 hour
+        
+        if should_sync:
+            try:
+                # Get real counts from collections
+                views_count = len(list(db.collection('glyphViews').where('glyphId', '==', glyph_id).stream()))
+                likes_count = len(list(db.collection('likes').where('glyphId', '==', glyph_id).stream()))
+                downloads_count = len(list(db.collection('glyphDownloads').where('glyphId', '==', glyph_id).stream()))
+                
+                # Update if different
+                current_views = glyph_data.get('views', 0)
+                current_likes = glyph_data.get('likes', 0)
+                current_downloads = glyph_data.get('downloads', 0)
+                
+                if (current_views != views_count or current_likes != likes_count or current_downloads != downloads_count):
+                    # Update denormalized counts
+                    db.collection('glyphs').document(glyph_id).update({
+                        'views': views_count,
+                        'likes': likes_count,
+                        'downloads': downloads_count,
+                        'lastCountSync': firestore.SERVER_TIMESTAMP,
+                        'syncType': 'auto_detail_page'
+                    })
+                    
+                    # Update the data we're returning
+                    glyph_data['views'] = views_count
+                    glyph_data['likes'] = likes_count
+                    glyph_data['downloads'] = downloads_count
+                    
+                    logger.info(f"Auto-synced glyph {glyph_id} on detail page visit")
+                else:
+                    # Just update the sync timestamp
+                    db.collection('glyphs').document(glyph_id).update({
+                        'lastCountSync': firestore.SERVER_TIMESTAMP,
+                        'syncType': 'auto_detail_page_no_change'
+                    })
+                    
+            except Exception as e:
+                logger.error(f"Error auto-syncing glyph {glyph_id}: {e}")
+                # Continue with existing data if sync fails
+        
+        # Use current denormalized data (possibly just updated)
+        glyph_data['views'] = glyph_data.get('views', 0)
+        glyph_data['likes'] = glyph_data.get('likes', 0)
+        glyph_data['downloads'] = glyph_data.get('downloads', 0)
         
         return jsonify({'glyph': glyph_data})
         
     except Exception as e:
         logger.error(f"Error getting glyph {glyph_id}: {e}")
         return jsonify({'error': 'Failed to fetch glyph'}), 500
+
+@app.route('/api/get-glyph/<glyph_id>/real-counts', methods=['GET', 'OPTIONS'])
+@limiter.limit("10/minute")
+@verify_token
+def get_glyph_real_counts(glyph_id):
+    """Get real-time counts for a specific glyph (expensive operation)"""
+    try:
+        # Get actual counts from collections (use only when needed)
+        views_docs = list(db.collection('glyphViews').where('glyphId', '==', glyph_id).stream())
+        likes_docs = list(db.collection('likes').where('glyphId', '==', glyph_id).stream())
+        downloads_docs = list(db.collection('glyphDownloads').where('glyphId', '==', glyph_id).stream())
+        
+        return jsonify({
+            'glyphId': glyph_id,
+            'realCounts': {
+                'views': len(views_docs),
+                'likes': len(likes_docs),
+                'downloads': len(downloads_docs)
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting real counts for glyph {glyph_id}: {e}")
+        return jsonify({'error': 'Failed to fetch real counts'}), 500
+
+@app.route('/api/admin/sync-glyph-counts', methods=['POST'])
+@limiter.limit("10/minute")
+@verify_token
+@require_auth_strict
+def sync_glyph_counts():
+    """Sync denormalized counts with actual collection counts (admin only)"""
+    try:
+        user_id = request.user['uid']
+        
+        # Check if user is admin
+        if not is_admin(user_id):
+            return jsonify({'error': 'Admin access required'}), 403
+        
+        data = request.get_json()
+        sync_all = data.get('syncAll', False) if data else False
+        glyph_id = data.get('glyphId') if data else None
+        batch_size = min(data.get('batchSize', 100) if data else 100, 500)  # Max 500 per request
+        
+        if glyph_id:
+            # Sync specific glyph
+            glyph_ids = [glyph_id]
+        elif sync_all:
+            # Sync ALL glyphs (for admin button)
+            docs = db.collection('glyphs').stream()
+            glyph_ids = [doc.id for doc in docs]
+            logger.info(f"Admin {user_id} requested full sync of {len(glyph_ids)} glyphs")
+        else:
+            # Sync batch of glyphs
+            docs = db.collection('glyphs').limit(batch_size).stream()
+            glyph_ids = [doc.id for doc in docs]
+        
+        synced_count = 0
+        errors = []
+        updates = []
+        
+        # Process in chunks for large datasets
+        chunk_size = 100  # Process 100 at a time to avoid timeouts
+        
+        for i in range(0, len(glyph_ids), chunk_size):
+            chunk_ids = glyph_ids[i:i + chunk_size]
+            batch = db.batch()
+            chunk_updates = 0
+            
+            for glyph_id in chunk_ids:
+                try:
+                    # Get real counts from collections efficiently
+                    views_count = len(list(db.collection('glyphViews').where('glyphId', '==', glyph_id).stream()))
+                    likes_count = len(list(db.collection('likes').where('glyphId', '==', glyph_id).stream()))
+                    downloads_count = len(list(db.collection('glyphDownloads').where('glyphId', '==', glyph_id).stream()))
+                    
+                    # Get current denormalized counts for comparison
+                    glyph_doc = db.collection('glyphs').document(glyph_id).get()
+                    if glyph_doc.exists:
+                        current_data = glyph_doc.to_dict()
+                        old_views = current_data.get('views', 0)
+                        old_likes = current_data.get('likes', 0)
+                        old_downloads = current_data.get('downloads', 0)
+                        
+                        # Only update if counts have changed
+                        if (old_views != views_count or old_likes != likes_count or old_downloads != downloads_count):
+                            # Update denormalized counts
+                            glyph_ref = db.collection('glyphs').document(glyph_id)
+                            batch.update(glyph_ref, {
+                                'views': views_count,
+                                'likes': likes_count,
+                                'downloads': downloads_count,
+                                'lastCountSync': firestore.SERVER_TIMESTAMP,
+                                'syncType': 'admin' if sync_all else 'auto'
+                            })
+                            
+                            updates.append({
+                                'glyphId': glyph_id,
+                                'old': {'views': old_views, 'likes': old_likes, 'downloads': old_downloads},
+                                'new': {'views': views_count, 'likes': likes_count, 'downloads': downloads_count}
+                            })
+                            chunk_updates += 1
+                    
+                except Exception as e:
+                    error_msg = f"Error syncing glyph {glyph_id}: {str(e)}"
+                    logger.error(error_msg)
+                    errors.append(error_msg)
+            
+            # Commit this chunk
+            if chunk_updates > 0:
+                batch.commit()
+                synced_count += chunk_updates
+                logger.info(f"Synced chunk {i//chunk_size + 1}: {chunk_updates} glyphs updated")
+        
+        result = {
+            'message': f'Sync completed: {synced_count} glyphs updated out of {len(glyph_ids)} checked',
+            'syncedCount': synced_count,
+            'totalChecked': len(glyph_ids),
+            'syncType': 'admin_full' if sync_all else 'admin_batch',
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }
+        
+        # Include sample updates and errors for debugging
+        if updates:
+            result['sampleUpdates'] = updates[:5]
+        if errors:
+            result['errors'] = errors[:3]
+            
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Error syncing glyph counts: {e}")
+        return jsonify({'error': 'Failed to sync counts'}), 500
 
 @app.route('/api/record-view', methods=['POST', 'OPTIONS'])
 @limiter.limit("10/minute")
@@ -1784,11 +1956,156 @@ def admin_reset_request(request_id):
 @app.errorhandler(429)
 def not_found_handler(e):
     return jsonify({'error': 'Endpoint not found'}), 404
+# Background sync system
+class BackgroundSyncService:
+    def __init__(self):
+        self.running = False
+        self.thread = None
+        
+    def sync_random_glyphs(self, batch_size=50):
+        """Sync a random batch of glyphs"""
+        try:
+            # Get random glyphs that haven't been synced recently
+            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=2)
+            
+            # Get glyphs that need syncing (no lastCountSync or old sync)
+            docs = db.collection('glyphs').limit(batch_size * 2).stream()
+            candidates = []
+            
+            for doc in docs:
+                data = doc.to_dict()
+                last_sync = data.get('lastCountSync')
+                
+                if not last_sync or (isinstance(last_sync, datetime) and last_sync.replace(tzinfo=timezone.utc) < cutoff_time):
+                    candidates.append(doc.id)
+            
+            # Take a random sample
+            import random
+            glyph_ids = random.sample(candidates, min(batch_size, len(candidates)))
+            
+            if not glyph_ids:
+                logger.info("No glyphs need syncing at this time")
+                return 0
+            
+            synced_count = 0
+            batch = db.batch()
+            
+            for glyph_id in glyph_ids:
+                try:
+                    # Get real counts
+                    views_count = len(list(db.collection('glyphViews').where('glyphId', '==', glyph_id).stream()))
+                    likes_count = len(list(db.collection('likes').where('glyphId', '==', glyph_id).stream()))
+                    downloads_count = len(list(db.collection('glyphDownloads').where('glyphId', '==', glyph_id).stream()))
+                    
+                    # Update denormalized counts
+                    glyph_ref = db.collection('glyphs').document(glyph_id)
+                    batch.update(glyph_ref, {
+                        'views': views_count,
+                        'likes': likes_count,
+                        'downloads': downloads_count,
+                        'lastCountSync': firestore.SERVER_TIMESTAMP,
+                        'syncType': 'auto_hourly'
+                    })
+                    synced_count += 1
+                    
+                except Exception as e:
+                    logger.error(f"Error in background sync for glyph {glyph_id}: {e}")
+            
+            if synced_count > 0:
+                batch.commit()
+                logger.info(f"Background sync completed: {synced_count} glyphs updated")
+            
+            return synced_count
+            
+        except Exception as e:
+            logger.error(f"Background sync failed: {e}")
+            return 0
+    
+    def run_hourly_sync(self):
+        """Run hourly sync in background thread"""
+        while self.running:
+            try:
+                # Wait 1 hour
+                time.sleep(3600)  # 3600 seconds = 1 hour
+                
+                if self.running:  # Check if still running after sleep
+                    logger.info("Starting hourly background sync...")
+                    synced = self.sync_random_glyphs(batch_size=100)
+                    logger.info(f"Hourly sync completed: {synced} glyphs synced")
+                    
+            except Exception as e:
+                logger.error(f"Hourly sync thread error: {e}")
+                time.sleep(300)  # Wait 5 minutes before retrying
+    
+    def start(self):
+        """Start the background sync service"""
+        if not self.running:
+            self.running = True
+            self.thread = threading.Thread(target=self.run_hourly_sync, daemon=True)
+            self.thread.start()
+            logger.info("Background sync service started")
+    
+    def stop(self):
+        """Stop the background sync service"""
+        self.running = False
+        if self.thread:
+            self.thread.join(timeout=5)
+        logger.info("Background sync service stopped")
+
+# Initialize background sync service
+sync_service = BackgroundSyncService()
+
+@app.route('/api/admin/sync-status', methods=['GET'])
+@limiter.limit("30/minute")
+@verify_token
+@require_auth_strict
+def get_sync_status():
+    """Get background sync service status (admin only)"""
+    try:
+        user_id = request.user['uid']
+        
+        # Check if user is admin
+        if not is_admin(user_id):
+            return jsonify({'error': 'Admin access required'}), 403
+        
+        # Get some sync statistics
+        recent_syncs = []
+        try:
+            # Get recently synced glyphs
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+            docs = db.collection('glyphs').where('lastCountSync', '>=', cutoff).limit(10).stream()
+            for doc in docs:
+                data = doc.to_dict()
+                if 'lastCountSync' in data:
+                    recent_syncs.append({
+                        'glyphId': doc.id,
+                        'lastSync': data['lastCountSync'].isoformat() if isinstance(data['lastCountSync'], datetime) else str(data['lastCountSync']),
+                        'syncType': data.get('syncType', 'unknown')
+                    })
+        except Exception as e:
+            logger.error(f"Error getting sync stats: {e}")
+        
+        return jsonify({
+            'backgroundSyncRunning': sync_service.running,
+            'recentSyncs': recent_syncs,
+            'message': 'Background sync service is active and syncing glyphs every hour' if sync_service.running else 'Background sync service is not running'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting sync status: {e}")
+        return jsonify({'error': 'Failed to get sync status'}), 500
 
 @app.errorhandler(500)
 def internal_error_handler(e):
     return jsonify({'error': 'Internal server error'}), 500
 
 if __name__ == '__main__':
-    # Only bind to localhost for security
-    app.run(host='127.0.0.1', port=5000, debug=os.getenv('FLASK_DEBUG', 'False').lower() == 'true')
+    # Start background sync service
+    sync_service.start()
+    
+    try:
+        # Only bind to localhost for security
+        app.run(host='127.0.0.1', port=5000, debug=os.getenv('FLASK_DEBUG', 'False').lower() == 'true')
+    finally:
+        # Stop background sync when app shuts down
+        sync_service.stop()

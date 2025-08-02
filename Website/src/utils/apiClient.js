@@ -339,6 +339,25 @@ class APIClient {
     const params = new URLSearchParams({ type });
     return this.request(`/my-glyph-requests?${params}`);
   }
+
+  // Admin sync methods
+  async syncAllGlyphCounts() {
+    return this.request('/admin/sync-glyph-counts', {
+      method: 'POST',
+      body: JSON.stringify({ syncAll: true }),
+    });
+  }
+
+  async syncGlyphCounts(options = {}) {
+    return this.request('/admin/sync-glyph-counts', {
+      method: 'POST',
+      body: JSON.stringify(options),
+    });
+  }
+
+  async getSyncStatus() {
+    return this.request('/admin/sync-status');
+  }
 }
 
 export const apiClient = new APIClient();
