@@ -194,6 +194,9 @@ const Home = () => {
                 </a>
                 {' '}by Firu - great work!
               </p>
+              <p className="text-nothing-gray-600 text-xs mt-3">
+                Hope you figure things out, Moody. Thanks for reminding me about rdr2. I love you lil dude ❤️
+              </p>
             </div>
           </div>
         </div>
