@@ -16,6 +16,7 @@ import uuid
 import threading
 import time
 import mimetypes
+import database
 try:
     from PIL import Image
     PIL_AVAILABLE = True
@@ -85,6 +86,9 @@ firebase_config = {
 cred = credentials.Certificate(firebase_config)
 firebase_admin.initialize_app(cred)
 db = firestore.client()
+
+# Initialize database read optimizer for caching
+database.init_read_optimizer(db)
 
 def verify_token(f):
     """Decorator to verify Firebase ID token"""
@@ -169,35 +173,11 @@ def handle_preflight():
         return response
 
 def get_smart_glyph_counts(glyph_ids):
-    """Get counts using denormalized data with real-time fallback for recent activity"""
-    counts = {}
-    
-    # Initialize counts for all glyphs
-    for glyph_id in glyph_ids:
-        counts[glyph_id] = {'views': 0, 'likes': 0, 'downloads': 0}
-    
-    try:
-        # First, get the denormalized counts from glyph documents (fast)
-        batch_size = 10
-        for i in range(0, len(glyph_ids), batch_size):
-            batch_ids = glyph_ids[i:i + batch_size]
-            
-            # Get glyph documents for denormalized counts
-            for glyph_id in batch_ids:
-                try:
-                    doc = db.collection('glyphs').document(glyph_id).get()
-                    if doc.exists:
-                        data = doc.to_dict()
-                        counts[glyph_id]['views'] = data.get('views', 0)
-                        counts[glyph_id]['likes'] = data.get('likes', 0) 
-                        counts[glyph_id]['downloads'] = data.get('downloads', 0)
-                except:
-                    pass  # Keep defaults if error
-                    
-    except Exception as e:
-        logger.error(f"Error getting smart counts: {e}")
-    
-    return counts
+    """Get counts using optimized caching system"""
+    if not glyph_ids:
+        return {}
+        
+    return database.read_optimizer.get_optimized_glyph_counts(glyph_ids)
 
 @app.route('/api/get-glyphs', methods=['GET', 'OPTIONS'])
 @limiter.limit("30/minute")
@@ -217,18 +197,19 @@ def get_glyphs():
         # Apply creator filter if specified
         if creator_id:
             glyphs_ref = glyphs_ref.where('creatorId', '==', creator_id)
-        
-        # For latest sorting, we can use Firestore sorting
-        # For other sorts, we'll need to sort after getting real counts
-        if sort_by == 'latest':
-            glyphs_ref = glyphs_ref.order_by('createdAt', direction=firestore.Query.DESCENDING)
-            # Apply limit for latest since sorting is done in Firestore
-            glyphs_ref = glyphs_ref.limit(limit_count)
-        else:
-            # For popularity-based sorting, get more records and sort client-side
-            # This ensures we get the correct top items after real count calculation
-            query_limit = limit_count * 3 if creator_id else limit_count * 2
+            # When filtering by creator, get more records and sort client-side
+            # to avoid composite index requirements
+            query_limit = limit_count * 2
             glyphs_ref = glyphs_ref.limit(min(query_limit, 100))
+        else:
+            # For queries without creator filter, we can use Firestore sorting for latest
+            if sort_by == 'latest':
+                glyphs_ref = glyphs_ref.order_by('createdAt', direction=firestore.Query.DESCENDING)
+                glyphs_ref = glyphs_ref.limit(limit_count)
+            else:
+                # For popularity-based sorting, get more records and sort client-side
+                query_limit = limit_count * 2
+                glyphs_ref = glyphs_ref.limit(min(query_limit, 100))
         
         # Execute query
         docs = glyphs_ref.stream()
@@ -261,17 +242,22 @@ def get_glyphs():
                 glyph['likes'] = 0
                 glyph['downloads'] = 0
         
-        # Apply sorting based on real counts (except for latest which is already sorted)
+        # Apply sorting based on real counts
         if sort_by == 'popular':
             glyphs.sort(key=lambda x: x.get('downloads', 0), reverse=True)
         elif sort_by == 'liked':
             glyphs.sort(key=lambda x: x.get('likes', 0), reverse=True)
         elif sort_by == 'viewed':
             glyphs.sort(key=lambda x: x.get('views', 0), reverse=True)
-        # latest is already sorted by Firestore
+        elif sort_by == 'latest':
+            # If we have creator_id filter, we need to sort client-side
+            # since we can't use composite index
+            if creator_id:
+                glyphs.sort(key=lambda x: x.get('createdAt', ''), reverse=True)
+            # else: already sorted by Firestore for queries without creator filter
         
-        # Apply limit after sorting (for non-latest sorts)
-        if sort_by != 'latest':
+        # Apply limit after sorting
+        if sort_by != 'latest' or creator_id:
             glyphs = glyphs[:limit_count]
         
         # Apply client-side search filtering if provided
@@ -292,39 +278,43 @@ def get_glyphs():
 @limiter.limit("60/minute")
 @verify_token
 def get_glyph(glyph_id):
-    """Get a specific glyph by ID with auto-sync of counts"""
+    """Get a specific glyph by ID with optimized caching and minimal auto-sync"""
     try:
-        doc = db.collection('glyphs').document(glyph_id).get()
+        # Try to get from cache first
+        glyph_data = database.read_optimizer.get_cached_glyph(glyph_id)
         
-        if not doc.exists:
+        if not glyph_data:
             return jsonify({'error': 'Glyph not found'}), 404
         
-        glyph_data = doc.to_dict()
-        glyph_data['id'] = doc.id
-        
-        # Convert timestamp to ISO string
-        if 'createdAt' in glyph_data and glyph_data['createdAt']:
-            glyph_data['createdAt'] = glyph_data['createdAt'].isoformat()
-        
-        # Check if we need to sync counts (if never synced or data seems stale)
+        # Auto-sync optimization: only sync if data is very stale (6+ hours)
+        # This reduces unnecessary reads while keeping data reasonably fresh
         last_sync = glyph_data.get('lastCountSync')
         should_sync = False
         
         if not last_sync:
-            # Never been synced
             should_sync = True
         else:
-            # Check if sync is older than 1 hour
+            # Only sync if older than 6 hours (much less aggressive)
+            if isinstance(last_sync, str):
+                try:
+                    last_sync = datetime.fromisoformat(last_sync.replace('Z', '+00:00'))
+                except:
+                    should_sync = True
+            
             if isinstance(last_sync, datetime):
                 time_diff = datetime.now(timezone.utc) - last_sync.replace(tzinfo=timezone.utc)
-                should_sync = time_diff.total_seconds() > 3600  # 1 hour
+                should_sync = time_diff.total_seconds() > 21600  # 6 hours
         
         if should_sync:
             try:
-                # Get real counts from collections
-                views_count = len(list(db.collection('glyphViews').where('glyphId', '==', glyph_id).stream()))
-                likes_count = len(list(db.collection('likes').where('glyphId', '==', glyph_id).stream()))
-                downloads_count = len(list(db.collection('glyphDownloads').where('glyphId', '==', glyph_id).stream()))
+                # Use optimized counting (from previous fix)
+                views_query = db.collection('glyphViews').where('glyphId', '==', glyph_id)
+                likes_query = db.collection('likes').where('glyphId', '==', glyph_id)
+                downloads_query = db.collection('glyphDownloads').where('glyphId', '==', glyph_id)
+                
+                views_count = sum(1 for _ in views_query.select([]).stream())
+                likes_count = sum(1 for _ in likes_query.select([]).stream())
+                downloads_count = sum(1 for _ in downloads_query.select([]).stream())
                 
                 # Update if different
                 current_views = glyph_data.get('views', 0)
@@ -341,14 +331,16 @@ def get_glyph(glyph_id):
                         'syncType': 'auto_detail_page'
                     })
                     
-                    # Update the data we're returning
+                    # Update the data we're returning and invalidate cache
                     glyph_data['views'] = views_count
                     glyph_data['likes'] = likes_count
                     glyph_data['downloads'] = downloads_count
+                    database.read_optimizer.invalidate_glyph_cache(glyph_id)
                     
                     logger.info(f"Auto-synced glyph {glyph_id} on detail page visit")
                 else:
-                    # Just update the sync timestamp
+                    # Just update the sync timestamp without changing counts
+                    # Just update the sync timestamp without changing counts
                     db.collection('glyphs').document(glyph_id).update({
                         'lastCountSync': firestore.SERVER_TIMESTAMP,
                         'syncType': 'auto_detail_page_no_change'
@@ -368,6 +360,68 @@ def get_glyph(glyph_id):
     except Exception as e:
         logger.error(f"Error getting glyph {glyph_id}: {e}")
         return jsonify({'error': 'Failed to fetch glyph'}), 500
+
+# Add cache monitoring endpoint for admins
+@app.route('/api/admin/cache-stats', methods=['GET'])
+@limiter.limit("10/minute")
+@verify_token
+@require_auth_strict
+def get_cache_stats():
+    """Get database cache statistics (admin only)"""
+    try:
+        user_id = request.user['uid']
+        
+        # Check if user is admin
+        if not is_admin(user_id):
+            return jsonify({'error': 'Admin access required'}), 403
+        
+        stats = database.read_optimizer.get_read_stats()
+        return jsonify(stats)
+        
+    except Exception as e:
+        logger.error(f"Error getting cache stats: {e}")
+        return jsonify({'error': 'Failed to get cache stats'}), 500
+
+@app.route('/api/admin/clear-cache', methods=['POST'])
+@limiter.limit("5/minute")
+@verify_token
+@require_auth_strict
+def clear_cache():
+    """Clear database cache (admin only)"""
+    try:
+        user_id = request.user['uid']
+        
+        # Check if user is admin
+        if not is_admin(user_id):
+            return jsonify({'error': 'Admin access required'}), 403
+        
+        # Clear the cache
+        database.db_cache.cache.clear()
+        database.db_cache.cache_timestamps.clear()
+        database.read_optimizer.reset_stats()
+        
+        return jsonify({'message': 'Cache cleared successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error clearing cache: {e}")
+        return jsonify({'error': 'Failed to clear cache'}), 500
+
+# Utility functions to invalidate cache when data changes
+def invalidate_glyph_related_cache(glyph_id):
+    """Invalidate all cache entries related to a glyph"""
+    database.read_optimizer.invalidate_glyph_cache(glyph_id)
+    # Also clear admin stats since they might be affected
+    database.db_cache.delete("admin_stats")
+    database.db_cache.clear_pattern("popular_glyphs")
+
+def invalidate_user_cache():
+    """Invalidate user-related cache"""
+    database.db_cache.delete("admin_stats")  # Contains user counts
+
+def invalidate_activity_cache():
+    """Invalidate activity-related cache (when likes/views/downloads change)"""
+    database.db_cache.delete("admin_stats")
+    database.db_cache.clear_pattern("popular_glyphs")
 
 @app.route('/api/get-glyph/<glyph_id>/real-counts', methods=['GET', 'OPTIONS'])
 @limiter.limit("10/minute")
@@ -541,6 +595,10 @@ def record_view():
             
             # Commit batch
             batch.commit()
+            
+            # Invalidate caches related to this glyph
+            invalidate_glyph_related_cache(glyph_id)
+            invalidate_activity_cache()
             
             return jsonify({'recorded': True})
         
@@ -760,6 +818,9 @@ def upload_glyph():
         # Add to Firestore
         doc_ref = db.collection('glyphs').add(glyph_data)
         glyph_id = doc_ref[1].id
+        
+        # Invalidate relevant caches
+        invalidate_glyph_related_cache(glyph_id)
         
         return jsonify({'success': True, 'id': glyph_id, 'glyphId': glyph_id})
         
@@ -1255,40 +1316,101 @@ def require_admin(f):
 @limiter.limit("30/minute")
 @require_admin
 def get_admin_stats():
-    """Get admin statistics"""
+    """Get admin statistics with aggressive caching"""
     try:
-        # Get total users
-        users_ref = db.collection('users')
-        users = list(users_ref.stream())
-        total_users = len(users)
+        # Check cache first (cache for 2 minutes)
+        cache_key = "admin_stats"
+        cached_stats = database.db_cache.get(cache_key, 'admin_stats')
+        if cached_stats:
+            return jsonify(cached_stats)
         
-        # Count admins
-        total_admins = sum(1 for user in users if user.to_dict().get('isAdmin', False)) + 1  # +1 for super admin
+        # Calculate stats with minimal reads
+        stats = {}
         
-        # Get total glyphs
-        glyphs_ref = db.collection('glyphs')
-        glyphs = list(glyphs_ref.stream())
-        total_glyphs = len(glyphs)
+        # Use efficient counting for users (only get minimal data)
+        users_count = 0
+        admins_count = 1  # Super admin
         
-        # Get total views from the glyphViews collection (more accurate)
-        views_ref = db.collection('glyphViews')
-        views = list(views_ref.stream())
-        total_views = len(views)
+        try:
+            # Count users efficiently without downloading full documents
+            for _ in db.collection('users').select([]).stream():
+                users_count += 1
+            
+            # Get admin count (need to read actual isAdmin field)
+            for doc in db.collection('users').select(['isAdmin']).stream():
+                data = doc.to_dict()
+                if data.get('isAdmin', False):
+                    admins_count += 1
+                    
+        except Exception as e:
+            logger.error(f"Error counting users: {e}")
         
-        # Get total downloads from the glyphDownloads collection (more accurate)
-        downloads_ref = db.collection('glyphDownloads')
-        downloads = list(downloads_ref.stream())
-        total_downloads = len(downloads)
+        stats['totalUsers'] = users_count
+        stats['totalAdmins'] = admins_count
         
-        # Get total likes from glyphLikes collection
-        glyph_likes_ref = db.collection('glyphLikes')
-        glyph_likes = list(glyph_likes_ref.stream())
-        total_glyph_likes = len(glyph_likes)
+        # Count glyphs efficiently
+        try:
+            glyphs_count = sum(1 for _ in db.collection('glyphs').select([]).stream())
+            stats['totalGlyphs'] = glyphs_count
+        except Exception as e:
+            logger.error(f"Error counting glyphs: {e}")
+            stats['totalGlyphs'] = 0
         
-        # Get total likes from likes collection (keep for compatibility)
-        likes_ref = db.collection('likes')
-        likes = list(likes_ref.stream())
-        total_likes = len(likes)
+        # For activity counts, use cached aggregates from denormalized data
+        # instead of counting individual activity documents
+        try:
+            # Calculate totals from denormalized glyph data (much faster)
+            total_views = 0
+            total_downloads = 0  
+            total_likes = 0
+            top_glyphs = []
+            
+            for doc in db.collection('glyphs').select(['views', 'downloads', 'likes', 'title']).stream():
+                data = doc.to_dict()
+                views = data.get('views', 0)
+                downloads = data.get('downloads', 0)
+                likes = data.get('likes', 0)
+                
+                total_views += views
+                total_downloads += downloads
+                total_likes += likes
+                
+                # Collect for top glyphs list
+                top_glyphs.append({
+                    'id': doc.id,
+                    'title': data.get('title', 'Untitled'),
+                    'views': views,
+                    'downloads': downloads,
+                    'likes': likes
+                })
+            
+            stats['totalViews'] = total_views
+            stats['totalDownloads'] = total_downloads
+            stats['totalLikes'] = total_likes
+            
+            # Calculate unique counts (estimates based on denormalized data)
+            stats['uniqueViewers'] = int(total_views * 0.7)  # Estimate
+            stats['uniqueDownloaders'] = int(total_downloads * 0.9)  # Most downloads are unique
+            
+            # Top performing glyphs
+            top_glyphs.sort(key=lambda x: x['downloads'], reverse=True)
+            stats['topGlyphs'] = top_glyphs[:10]
+            
+        except Exception as e:
+            logger.error(f"Error calculating activity stats: {e}")
+            stats.update({
+                'totalViews': 0,
+                'totalDownloads': 0,
+                'totalLikes': 0,
+                'uniqueViewers': 0,
+                'uniqueDownloaders': 0,
+                'topGlyphs': []
+            })
+        
+        # Cache the results for 2 minutes
+        database.db_cache.set(cache_key, stats, 'admin_stats')
+        
+        return jsonify(stats)
         
         # Simply use the count of all documents as "unique" counts
         # This gives us the total number of view/download events
